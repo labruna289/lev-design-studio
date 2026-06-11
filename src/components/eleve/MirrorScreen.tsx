@@ -83,7 +83,7 @@ function landmarksToTints(lm: any, shades: { lip: string; blush: string; eye: st
   if (!seq) return [];
   return seq.map((s: any, i: number) => ({
     id: `t${i}-${s.t.type}`,
-    type: s.t.type,
+    type: s.t.type as TintType,
     x: s.t.x, y: s.t.y, size: s.t.size,
     shade: shades[s.t.type as TintType],
   }));
@@ -166,7 +166,7 @@ export default function MirrorScreen() {
       setFeatureMap(stageMap);
       const lm = deriveFromFeatureMap(stageMap as any);
       if (!lm) throw new Error("derive failed");
-      lm.stage = true;
+      (lm as any).stage = true;
       const seq = buildApplySequence(lm, photo.aspect) || [];
       // Choreograph
       const next: Tint[] = [];
@@ -175,7 +175,7 @@ export default function MirrorScreen() {
         await sleep(s.d / 3); // compress a touch
         const t: Tint = {
           id: `t${next.length}-${s.t.type}`,
-          type: s.t.type,
+          type: s.t.type as TintType,
           x: s.t.x, y: s.t.y, size: s.t.size,
           shade: shades[s.t.type as TintType],
         };
@@ -221,10 +221,10 @@ export default function MirrorScreen() {
         if (validateFeatureMap(nf as any)) {
           const lm = deriveFromFeatureMap(nf as any);
           if (lm) {
-            lm.stage = true;
+            (lm as any).stage = true;
             const seq = buildApplySequence(lm, photo?.aspect ?? 0.75) || [];
             setTints(seq.map((s: any, i: number) => ({
-              id: `f${i}-${s.t.type}`, type: s.t.type, x: s.t.x, y: s.t.y, size: s.t.size,
+              id: `f${i}-${s.t.type}`, type: s.t.type as TintType, x: s.t.x, y: s.t.y, size: s.t.size,
               shade: shades[s.t.type as TintType],
             })));
           }
