@@ -2,13 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Frame } from "@/components/eleve/Frame";
 import { ScreenHeader } from "@/components/eleve/ScreenHeader";
 import { PillButton } from "@/components/eleve/PillButton";
-
-const traits = [
-  { k: "Undertone", v: "Warm — soft autumn" },
-  { k: "Silhouette", v: "Long line, narrow shoulder" },
-  { k: "Palette", v: "Espresso, blush, champagne" },
-  { k: "Best fabrics", v: "Wool crepe, silk, brushed cotton" },
-];
+import { PaletteStrip } from "@/components/eleve/PaletteStrip";
+import { AnalysisTag } from "@/components/eleve/AnalysisTag";
+import { palette, analysisTags } from "@/lib/eleve-mock";
 
 export const Route = createFileRoute("/analysis")({
   head: () => ({ meta: [{ title: "Your analysis — Élevé" }] }),
@@ -19,31 +15,45 @@ function Analysis() {
   const navigate = useNavigate();
   return (
     <Frame>
-      <ScreenHeader back="/upload" eyebrow="Your analysis" title="A portrait, read." />
+      <ScreenHeader back="/upload" eyebrow="Your analysis" />
 
-      <div className="card-atelier mt-2 p-6 rise" style={{ animationDelay: "200ms" }}>
-        <p className="serif-display italic text-[18px] text-espresso leading-snug">
-          You wear restraint beautifully. Your palette favours warm neutrals against
-          a single, considered accent.
+      <h1 className="serif-display text-[42px] text-ink leading-[1.02] text-center">
+        <span className="mask-line block">
+          <span style={{ animationDelay: "120ms" }}>Warm ivory,</span>
+        </span>
+        <span className="mask-line block italic" style={{ color: "var(--espresso)" }}>
+          <span style={{ animationDelay: "320ms" }}>worn quietly.</span>
+        </span>
+      </h1>
+
+      <div className="mt-10 rise" style={{ animationDelay: "520ms" }}>
+        <div className="eyebrow mb-3">Your palette</div>
+        <PaletteStrip swatches={palette} />
+        <p className="text-[12px] text-muted-foreground mt-2 text-center">
+          Tap a swatch.
         </p>
       </div>
 
-      <ul className="mt-6 flex flex-col">
-        {traits.map((t, i) => (
-          <li
-            key={t.k}
-            className="flex items-baseline justify-between gap-4 py-4 border-b border-border last:border-b-0 rise"
-            style={{ animationDelay: `${260 + i * 65}ms` }}
-          >
-            <span className="eyebrow">{t.k}</span>
-            <span className="text-right text-[14px] text-ink">{t.v}</span>
-          </li>
-        ))}
-      </ul>
+      <div className="mt-10">
+        <div className="eyebrow mb-3">A reading</div>
+        <div className="grid grid-cols-2 gap-3">
+          {analysisTags.map((t, i) => (
+            <AnalysisTag key={t.k} k={t.k} v={t.v} delay={700 + i * 70} />
+          ))}
+        </div>
+      </div>
 
-      <div className="mt-10 rise" style={{ animationDelay: "620ms" }}>
-        <PillButton variant="ink" onClick={() => navigate({ to: "/app" })}>
-          Enter the atelier
+      <div className="mt-10 flex flex-col gap-3 rise" style={{ animationDelay: "1180ms" }}>
+        <PillButton variant="ink" onClick={() => navigate({ to: "/looks" })}>
+          View your curated looks
+        </PillButton>
+        <PillButton
+          variant="ghost"
+          onClick={() => navigate({ to: "/mirror" })}
+          className="border-champagne text-ink"
+          style={{ borderColor: "var(--champagne)" }}
+        >
+          See them on you · The mirror
         </PillButton>
       </div>
     </Frame>
