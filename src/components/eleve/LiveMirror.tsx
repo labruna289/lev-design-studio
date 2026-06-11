@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CameraOff, Download, Power } from "lucide-react";
-import { getVideoLandmarker, detectVideoFrame } from "@/lib/facemesh-tier";
-import { installMediapipeCdnShim } from "@/lib/mediapipe-cdn-shim";
-import { createMakeupRenderer, hexToRgb } from "@/lib/makeup-webgl";
+import { hexToRgb } from "@/lib/makeup-canvas";
+import { startLipstick, setLipColor, setLipOpacity, destroyWebARRocks } from "@/lib/webarrocks-tier";
 import {
-  CATALOG, ALL_PRODUCTS, PRODUCTS_BY_ID, DEFAULT_LIVE_LOOK, LIVE_LOOKS,
+  CATALOG, PRODUCTS_BY_ID, DEFAULT_LIVE_LOOK, LIVE_LOOKS,
   type Category, type Finish, type LiveProductState, type MakeupProduct,
 } from "@/lib/eleve-shades";
 
@@ -23,19 +22,17 @@ function defaultState(p: MakeupProduct): LiveProductState {
   };
 }
 
+// Lip products in priority order — Stage 1 (WebAR.rocks) renders lips only.
+const LIP_PRIORITY = ["shine-loud", "butter-gloss", "line-loud"];
+
 export default function LiveMirror(_props: LiveMirrorProps) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasVideoRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasARRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
-  const landmarkerRef = useRef<any>(null);
-  const rendererRef = useRef<ReturnType<typeof createMakeupRenderer> | null>(null);
-  const rafRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [faceFound, setFaceFound] = useState(false);
   const [startKey, setStartKey] = useState(0);
 
   const [active, setActive] = useState<Record<string, LiveProductState>>(() =>
@@ -48,11 +45,12 @@ export default function LiveMirror(_props: LiveMirrorProps) {
   const product = PRODUCTS_BY_ID[productId];
   const state = active[productId] ?? defaultState(product);
 
-  // Live values for the rAF loop.
-  const optsRef = useRef({ active, beforeAfter });
-  useEffect(() => { optsRef.current = { active, beforeAfter }; }, [active, beforeAfter]);
-
-  useEffect(() => { installMediapipeCdnShim(); }, []);
+  // The enabled lip product that drives the live lipstick (priority order).
+  const lipDriver = useMemo(() => {
+    for (const id of LIP_PRIORITY) { const s = active[id]; if (s?.enabled) return { ...s, id }; }
+    return null;
+  }, [active]);
+  const lipsVisible = !!lipDriver && !beforeAfter;
 
   /* ---- helpers to mutate the per-product state ---- */
   function patch(id: string, p: Partial<LiveProductState>) {
@@ -84,108 +82,51 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     toast(`${look.title} applied`);
   }
 
-  /* ---- camera + model lifecycle (StrictMode-safe; benign play() ignored) ---- */
+  /* ---- WebAR.rocks lifecycle (StrictMode-safe). The engine owns its own
+     camera + video element and self-drives its render loop. ---- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true); setError(null);
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
-          audio: false,
-        });
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = stream;
-        const video = videoRef.current!;
-        video.srcObject = stream;
-        video.play().catch(() => {});
-        const lmkr = await getVideoLandmarker();
-        if (cancelled) return;
-        if (!lmkr) { setError("Face detection model could not load."); setLoading(false); return; }
-        landmarkerRef.current = lmkr;
-        rendererRef.current = createMakeupRenderer();
+        await startLipstick({ canvasVideo: canvasVideoRef.current, canvasAR: canvasARRef.current });
+        if (cancelled) { await destroyWebARRocks(); return; }
         setCameraReady(true); setLoading(false);
       } catch (e: any) {
         if (cancelled) return;
-        setError(e?.name === "NotAllowedError"
+        const msg = String(e?.message || e || "");
+        setError(/permission|denied|NotAllowed/i.test(msg)
           ? "Camera access denied. Allow it in your browser, then try again."
-          : (e?.message || "Could not start the camera."));
+          : (msg || "Could not start the mirror."));
         setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-      if (videoRef.current) videoRef.current.srcObject = null;
+      destroyWebARRocks();
       setCameraReady(false);
     };
   }, [startKey]);
 
-  /* ---- render loop ---- */
+  /* ---- push the live lip shade + intensity into the engine ---- */
   useEffect(() => {
-    if (!cameraReady || !landmarkerRef.current || !rendererRef.current) return;
-    const video = videoRef.current!;
-    const canvas = canvasRef.current!;
-    const ctx = canvas.getContext("2d")!;
-    const lmkr = landmarkerRef.current;
-    const renderer = rendererRef.current!;
-    let lastTime = -1, lastFace = false;
-
-    function sizeCanvas() {
-      const stage = stageRef.current; if (!stage) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const w = Math.round(stage.clientWidth * dpr), h = Math.round(stage.clientHeight * dpr);
-      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    }
-
-    function drawVideoOnly(W: number, H: number) {
-      const vw = video.videoWidth, vh = video.videoHeight;
-      if (!vw || !vh) return;
-      const s = Math.max(W / vw, H / vh);
-      const ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
-      ctx.setTransform(-s, 0, 0, s, ox + vw * s, oy);
-      ctx.drawImage(video, 0, 0);
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-    }
-
-    function loop() {
-      rafRef.current = requestAnimationFrame(loop);
-      const now = performance.now();
-      if (now - lastTime < 33) return;
-      lastTime = now;
-      if (video.readyState < 2) return;
-      sizeCanvas();
-      const W = canvas.width, H = canvas.height;
-      const o = optsRef.current;
-
-      const lms = detectVideoFrame(lmkr, video, now);
-      if (!lms || lms.length < 478) {
-        drawVideoOnly(W, H);
-        if (lastFace) { lastFace = false; setFaceFound(false); }
-        return;
-      }
-      if (!lastFace) { lastFace = true; setFaceFound(true); }
-
-      const products = o.beforeAfter ? [] : ALL_PRODUCTS
-        .filter((p) => o.active[p.id]?.enabled)
-        .sort((a, b) => a.layer - b.layer)
-        .map((p) => {
-          const st = o.active[p.id];
-          return { paint: p.paint, shade: hexToRgb(st.shadeHex), shadeHex: st.shadeHex, finish: st.finish, intensity: st.intensity, style: st.style };
-        });
-
-      renderer.render(ctx, lms, video, W, H, { products, smoothing: 0.5, now });
-    }
-
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [cameraReady]);
+    if (!cameraReady || !lipDriver) return;
+    setLipColor(hexToRgb(lipDriver.shadeHex));
+    setLipOpacity(lipDriver.intensity);
+  }, [cameraReady, lipDriver?.shadeHex, lipDriver?.intensity, lipDriver?.id]);
 
   function captureScreenshot() {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const url = canvas.toDataURL("image/jpeg", 0.92);
+    const v = canvasVideoRef.current, ar = canvasARRef.current;
+    if (!v) return;
+    const tmp = document.createElement("canvas");
+    tmp.width = v.width; tmp.height = v.height;
+    const c = tmp.getContext("2d")!;
+    // un-mirror to match the on-screen (CSS-mirrored) view
+    c.save(); c.translate(tmp.width, 0); c.scale(-1, 1);
+    c.drawImage(v, 0, 0);
+    if (ar && lipsVisible) c.drawImage(ar, 0, 0);
+    c.restore();
+    const url = tmp.toDataURL("image/jpeg", 0.92);
     const a = document.createElement("a"); a.href = url; a.download = "eleve-live-look.jpg"; a.click();
     toast("Saved to your device.");
   }
@@ -197,8 +138,13 @@ export default function LiveMirror(_props: LiveMirrorProps) {
       {/* STAGE */}
       <div ref={stageRef} className="relative w-full overflow-hidden card-atelier select-none"
         style={{ aspectRatio: "3 / 4", padding: 0, touchAction: "none" }}>
-        <video ref={videoRef} playsInline muted className="absolute inset-0 h-full w-full object-cover" style={{ transform: "scaleX(-1)" }} />
-        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" style={{ pointerEvents: "none" }} />
+        {/* WebAR.rocks stacked canvases (mirror both identically). The engine
+            creates its own <video> + camera internally. */}
+        <canvas id="WebARRocksFaceCanvasVideo" ref={canvasVideoRef}
+          className="absolute inset-0 h-full w-full object-cover" style={{ transform: "scaleX(-1)", zIndex: 0 }} />
+        <canvas id="WebARRocksFaceCanvasAR" ref={canvasARRef}
+          className="absolute inset-0 h-full w-full"
+          style={{ transform: "scaleX(-1)", zIndex: 1, pointerEvents: "none", opacity: lipsVisible ? 1 : 0, transition: "opacity 150ms" }} />
 
         {/* before/after */}
         {cameraReady && !loading && !error && (
@@ -210,13 +156,6 @@ export default function LiveMirror(_props: LiveMirrorProps) {
             style={{ padding: "7px 14px", background: "rgba(17,17,17,0.6)", color: "#FFFDF9" }}>
             {beforeAfter ? "Before" : "Hold · before"}
           </button>
-        )}
-
-        {cameraReady && !faceFound && !loading && !error && (
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pill text-[11px] tracking-[0.18em] uppercase"
-            style={{ padding: "8px 16px", background: "rgba(17,17,17,0.6)", color: "#FFFDF9" }}>
-            Center your face in the frame
-          </div>
         )}
 
         {loading && (
