@@ -279,14 +279,20 @@ export function createMakeupRenderer() {
   function paintBlush(ctx, P, apexIdx, outerEyeIdx, faceWidth, shadeRgb, intensity, finish) {
     const c = P[apexIdx], eye = P[outerEyeIdx];
     if (!c || !eye) return;
+    // Lift the centre ~22% up the cheekbone toward the outer eye so the
+    // flush sits on the cheekbone, not the apple, and sweeps to the temple.
+    const cx = c.x + (eye.x - c.x) * 0.22;
+    const cy = c.y + (eye.y - c.y) * 0.22;
     const angle = Math.atan2(eye.y - c.y, eye.x - c.x);
-    const radius = Math.max(8, faceWidth * 0.17);
+    const radius = Math.max(8, faceWidth * 0.19);
     ctx.save();
-    ctx.translate(c.x, c.y);
+    ctx.translate(cx, cy);
     ctx.rotate(angle);
-    ctx.scale(1, 0.55);
+    ctx.scale(1, 0.52);
     const g = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-    g.addColorStop(0, rgba(shadeRgb, 0.38 * intensity));
+    // Softer, more diffuse falloff so it reads as a natural flush, not a disc.
+    g.addColorStop(0, rgba(shadeRgb, 0.26 * intensity));
+    g.addColorStop(0.55, rgba(shadeRgb, 0.12 * intensity));
     g.addColorStop(1, rgba(shadeRgb, 0));
     ctx.globalCompositeOperation = finish === "powder" ? "multiply" : "soft-light";
     ctx.fillStyle = g;

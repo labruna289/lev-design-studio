@@ -30,7 +30,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
 
   const [lookIdx, setLookIdx] = useState(0);
   const look: LookGrade = LOOK_GRADES[lookIdx];
-  const [intensity, setIntensity] = useState(0.85);
+  const [intensity, setIntensity] = useState(0.8);
   const [tab, setTab] = useState<TintType>("lip");
   const [shades, setShades] = useState(look.defaults);
   const [finish, setFinish] = useState<Finish>("glossy");
