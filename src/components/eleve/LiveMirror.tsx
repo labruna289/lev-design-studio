@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import { CameraOff, Download, Power } from "lucide-react";
 import { getVideoLandmarker, detectVideoFrame } from "@/lib/facemesh-tier";
 import { installMediapipeCdnShim } from "@/lib/mediapipe-cdn-shim";
-import { createMakeupRenderer, hexToRgb } from "@/lib/makeup-canvas";
+import { createMakeupRenderer, hexToRgb } from "@/lib/makeup-webgl";
 import {
   CATALOG, ALL_PRODUCTS, PRODUCTS_BY_ID, DEFAULT_LIVE_LOOK, LIVE_LOOKS,
   type Category, type Finish, type LiveProductState, type MakeupProduct,
