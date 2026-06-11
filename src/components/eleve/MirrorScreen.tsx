@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { ArrowLeftRight, Download, Eye, EyeOff, Sparkles, Undo2, Share2, Box } from "lucide-react";
+import { ArrowLeftRight, Download, Eye, EyeOff, Sparkles, Undo2, Share2, Box, Video, Image } from "lucide-react";
 import { Frame } from "@/components/eleve/Frame";
 import { ScreenHeader } from "@/components/eleve/ScreenHeader";
 import { usePhoto } from "@/lib/photo-store";
 import { LOOK_GRADES, SHADES, type LookGrade, type Shade } from "@/lib/eleve-shades";
+import LiveMirror from "@/components/eleve/LiveMirror";
 import {
   buildApplySequence,
   coverMap,
@@ -102,6 +103,7 @@ function landmarksToTints(lm: any, shades: { lip: string; blush: string; eye: st
 export default function MirrorScreen() {
   const navigate = useNavigate();
   const photo = usePhoto();
+  const [liveMode, setLiveMode] = useState(false);
   const [lookIdx, setLookIdx] = useState(0);
   const look: LookGrade = LOOK_GRADES[lookIdx];
   const [intensity, setIntensity] = useState(0.75);
@@ -431,16 +433,43 @@ export default function MirrorScreen() {
     toast("Saved to your device.");
   }
 
+  if (liveMode) {
+    return (
+      <Frame withNav>
+        <ScreenHeader back="/app" eyebrow="The Mirror" title="See it on you — live." />
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setLiveMode(false)}
+            className="pill press flex-1 text-[12px] flex items-center justify-center gap-1.5"
+            style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--ink)" }}>
+            <Image size={14} strokeWidth={1.25} /> Photo mode
+          </button>
+          <button
+            className="pill press flex-1 text-[12px] flex items-center justify-center gap-1.5"
+            style={{ background: "var(--ink)", color: "var(--surface)" }}>
+            <Video size={14} strokeWidth={1.25} /> Live camera
+          </button>
+        </div>
+        <LiveMirror onBack={() => setLiveMode(false)} />
+      </Frame>
+    );
+  }
+
   if (!photo) {
     return (
       <Frame withNav>
         <ScreenHeader back="/app" eyebrow="The Mirror" title="A portrait first." />
         <div className="card-atelier p-8 text-center">
           <p className="text-[14px] text-muted-foreground mb-6">
-            The Mirror needs your portrait. It is read on your device.
+            The Mirror needs your portrait — or try it live.
           </p>
           <button onClick={() => navigate({ to: "/upload" })}
             className="pill bg-ink text-surface press w-full">Add a portrait</button>
+          <button onClick={() => setLiveMode(true)}
+            className="pill press w-full mt-3 flex items-center justify-center gap-2 text-[13px]"
+            style={{ background: "var(--champagne)", color: "var(--espresso)" }}>
+            <Video size={14} strokeWidth={1.25} /> Try it live
+          </button>
         </div>
       </Frame>
     );
@@ -449,6 +478,21 @@ export default function MirrorScreen() {
   return (
     <Frame withNav>
       <ScreenHeader back="/app" eyebrow="The Mirror" title="See it on you." />
+
+      {/* Mode toggle */}
+      <div className="flex gap-2 mb-4">
+        <button
+          className="pill press flex-1 text-[12px] flex items-center justify-center gap-1.5"
+          style={{ background: "var(--ink)", color: "var(--surface)" }}>
+          <Image size={14} strokeWidth={1.25} /> Photo mode
+        </button>
+        <button
+          onClick={() => setLiveMode(true)}
+          className="pill press flex-1 text-[12px] flex items-center justify-center gap-1.5"
+          style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--ink)" }}>
+          <Video size={14} strokeWidth={1.25} /> Live camera
+        </button>
+      </div>
 
       {/* STAGE */}
       <div

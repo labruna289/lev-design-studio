@@ -14,8 +14,9 @@
  */
 
 let landmarkerPromise = null;
+let videoLandmarkerPromise = null;
 
-/** Lazy singleton. Resolves to null (never throws) if unavailable. */
+/** Lazy singleton (IMAGE mode). Resolves to null (never throws) if unavailable. */
 async function getLandmarker() {
   if (!landmarkerPromise) {
     landmarkerPromise = (async () => {
@@ -35,6 +36,36 @@ async function getLandmarker() {
     })();
   }
   return landmarkerPromise;
+}
+
+/** Lazy singleton (VIDEO mode) for real-time camera detection. */
+export async function getVideoLandmarker() {
+  if (!videoLandmarkerPromise) {
+    videoLandmarkerPromise = (async () => {
+      try {
+        const { FilesetResolver, FaceLandmarker } = await import("@mediapipe/tasks-vision");
+        const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
+        return await FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: { modelAssetPath: "/mediapipe/face_landmarker.task" },
+          runningMode: "VIDEO",
+          numFaces: 1,
+          outputFaceBlendshapes: false,
+        });
+      } catch (e) {
+        console.warn("[eleve] FaceLandmarker VIDEO unavailable:", e?.message || e);
+        return null;
+      }
+    })();
+  }
+  return videoLandmarkerPromise;
+}
+
+/** Detect landmarks from a video frame. Returns raw 478 landmarks or null. */
+export function detectVideoFrame(landmarker, video, timestampMs) {
+  try {
+    const res = landmarker.detectForVideo(video, timestampMs);
+    return res?.faceLandmarks?.[0] ?? null;
+  } catch { return null; }
 }
 
 /* ---- Topology (verify via golden-image tests before release, spec §3/§7) ---- */
