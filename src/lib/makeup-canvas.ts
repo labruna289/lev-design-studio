@@ -406,18 +406,24 @@ export function createMakeupRenderer() {
         const p = new Path2D(); tracePolyline(p, lowerArc, bb.x, bb.y); o.stroke(p); o.filter = "none";
       }
 
-      // Punch out the open eye so shadow never touches the eyeball.
+      // Punch out the open eye so shadow never touches the eyeball. Expand the
+      // aperture ~14% out from the eye centre so it clears the whole eyeball
+      // plus a margin (shadow then sits cleanly up on the lid), with a hard
+      // core erase so dark shades can't leave a wash on the sclera.
       if (lowerArc.length) {
-        const aperture = lash.concat(lowerArc.slice().reverse());
+        const aperture = lash.concat(lowerArc.slice().reverse())
+          .map(p => ({ x: eyeC.x + (p.x - eyeC.x) * 1.14, y: eyeC.y + (p.y - eyeC.y) * 1.14 }));
         o.globalCompositeOperation = "destination-out";
-        o.filter = `blur(${Math.max(1, blur * 0.45)}px)`; o.fillStyle = "#fff";
-        const ap = new Path2D(); traceSmooth(ap, aperture, bb.x, bb.y); o.fill(ap);
+        o.fillStyle = "#fff";
+        const ap = new Path2D(); traceSmooth(ap, aperture, bb.x, bb.y);
+        o.fill(ap);                                   // hard core
+        o.filter = `blur(${Math.max(1, blur * 0.5)}px)`; o.fill(ap); // soft rim
         o.filter = "none"; o.globalCompositeOperation = "source-over";
       }
 
       if (finish === "shimmer" || finish === "metallic") addSpeckle(o, bb, finish === "metallic" ? 0.2 : 0.12);
 
-      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = (smoky ? 0.46 : 0.4) * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = (smoky ? 0.42 : 0.4) * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
       if (finish === "satin" || finish === "shimmer") {
         ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.16 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
       }
