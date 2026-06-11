@@ -26,9 +26,21 @@ const UPPER_LASH_L = [362, 398, 384, 385, 386, 387, 388, 466, 263];
 const LOWER_LASH_R = [33, 7, 163, 144, 145, 153, 154, 155, 133];
 const LOWER_LASH_L = [263, 249, 390, 373, 374, 380, 381, 382, 362];
 const OUTER_EYE_R = 33, OUTER_EYE_L = 263;
+const INNER_EYE_R = 133, INNER_EYE_L = 362;
 const BLUSH_APEX_R = 50, BLUSH_APEX_L = 280;
 const FACE_LEFT = 234, FACE_RIGHT = 454;
 const LIP_LOWER_OUT = 17, LIP_LOWER_IN = 14;
+const NOSE_TIP = 1;
+const CUPID_R = 37, CUPID_L = 267;
+const BROW_R = [107, 66, 105, 63, 70, 46, 53, 52, 65, 55];
+const BROW_L = [336, 296, 334, 293, 300, 276, 283, 282, 295, 285];
+const CHEEK_HOLLOW_R = [116, 117, 118, 119, 50, 205, 206, 207];
+const CHEEK_HOLLOW_L = [345, 346, 347, 348, 280, 425, 426, 427];
+const CHEEKBONE_TOP_R = [50, 101, 36, 205];
+const CHEEKBONE_TOP_L = [280, 330, 266, 425];
+const NOSE_BRIDGE = [6, 197, 195, 4];
+const BRONZER_ANCHORS = [10, 338, 109, 127, 356, 50, 280, 172, 397];
+const FACE_OVAL = [10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109];
 
 /* ---------- helpers ---------- */
 function centroid(pts) { let x = 0, y = 0; for (const p of pts) { x += p.x; y += p.y; } return { x: x / pts.length, y: y / pts.length }; }
@@ -297,8 +309,11 @@ export function createMakeupRenderer() {
   function lipMesh(P) {
     const outer = LIP_OUTER.map(i => P[i]), inner = LIP_INNER.map(i => P[i]);
     if (outer.some(p => !p) || inner.some(p => !p)) return null;
-    // outer (edge 0, soft border) → inner (edge 1, full to mouth line)
-    return ribbon([{ pts: outer, edge: 0 }, { pts: inner, edge: 1 }], true);
+    // Crisp edge: a thin outset ring (edge 0) feathers right at the lip line,
+    // then full coverage across the flesh (outer + inner both edge 1).
+    const c = centroid(outer);
+    const outerOut = outer.map(p => ({ x: p.x + (p.x - c.x) * 0.035, y: p.y + (p.y - c.y) * 0.035 }));
+    return ribbon([{ pts: outerOut, edge: 0 }, { pts: outer, edge: 1 }, { pts: inner, edge: 1 }], true);
   }
   function lipLinerMesh(P) {
     const outer = LIP_OUTER.map(i => P[i]); if (outer.some(p => !p)) return null;
@@ -351,6 +366,25 @@ export function createMakeupRenderer() {
     // lash edge solid (1), top edge soft (0)
     const rings = [{ pts: lash, edge: 1 }, { pts: top, edge: 0 }];
     return ribbon(rings, false);
+  }
+  // fan over an arbitrary closed polygon (centroid edge 1, ring edge 0)
+  function polyFan(pts) {
+    if (pts.some(p => !p)) return null;
+    const c = centroid(pts), cc = toClip(c.x, c.y);
+    const pos = [cc[0], cc[1]], edge = [1], idx = [];
+    const N = pts.length;
+    for (const p of pts) { const q = toClip(p.x, p.y); pos.push(q[0], q[1]); edge.push(0); }
+    for (let i = 0; i < N; i++) idx.push(0, 1 + i, 1 + ((i + 1) % N));
+    return { pos: new Float32Array(pos), edge: new Float32Array(edge), idx: new Uint16Array(idx) };
+  }
+  // soft elliptical bloom (for bronzer / contour / highlighter dabs)
+  function blobFan(cx, cy, r, ry, ang) {
+    const rim = [];
+    for (let i = 0; i < 18; i++) {
+      const t = (i / 18) * Math.PI * 2, ex = Math.cos(t) * r, ey = Math.sin(t) * ry;
+      rim.push({ x: cx + ex * Math.cos(ang) - ey * Math.sin(ang), y: cy + ex * Math.sin(ang) + ey * Math.cos(ang) });
+    }
+    return fan({ x: cx, y: cy }, rim);
   }
 
   function drawMesh(prog, locp, mesh, setUniforms) {
@@ -443,7 +477,7 @@ export function createMakeupRenderer() {
       if (p.paint === "lipstick" || p.paint === "lipGloss") {
         const m = lipMesh(P); if (!m) continue;
         const op = p.paint === "lipGloss" ? it * 0.7 : it;
-        drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, op, 0.32, fin, now));
+        drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, op, 0.55, fin, now));
       } else if (p.paint === "lipLiner") {
         const m = lipLinerMesh(P); if (!m) continue;
         drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, it * 0.85, 0.5, fin, now));
@@ -468,8 +502,42 @@ export function createMakeupRenderer() {
           const m = lashBandMesh(P, lashI, oe, fw, 0.014, false); if (!m) continue;
           drawMesh(tintProg, loc.tint, m, () => tintUniforms(shade, it * 0.8, 0.25));
         }
+      } else if (p.paint === "brows") {
+        for (const idx of [BROW_R, BROW_L]) {
+          const m = polyFan(idx.map(i => P[i])); if (!m) continue;
+          drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, it * 0.6, 0.75, fin, now));
+        }
+      } else if (p.paint === "contour") {
+        for (const idx of [CHEEK_HOLLOW_R, CHEEK_HOLLOW_L]) {
+          const m = polyFan(idx.map(i => P[i])); if (!m) continue;
+          drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, it * 0.4, 0.9, fin, now));
+        }
+      } else if (p.paint === "bronzer") {
+        const tip = P[NOSE_TIP];
+        for (const ai of BRONZER_ANCHORS) {
+          const a = P[ai]; if (!a || !tip) continue;
+          const cx = a.x + (tip.x - a.x) * 0.22, cy = a.y + (tip.y - a.y) * 0.22;
+          const m = blobFan(cx, cy, fw * 0.13, fw * 0.1, 0); if (!m) continue;
+          drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, it * 0.3, 0.95, fin, now));
+        }
+      } else if (p.paint === "skinTint") {
+        const m = polyFan(FACE_OVAL.map(i => P[i])); if (!m) continue;
+        drawMesh(regionProg, loc.region, m, () => regionUniforms(shade, it * 0.3, 0.95, fin, now));
+      } else if (p.paint === "highlighter") {
+        gl.blendFunc(gl.ONE, gl.ONE); // additive glow
+        const spots = [];
+        for (const [arr, oe] of [[CHEEKBONE_TOP_R, OUTER_EYE_R], [CHEEKBONE_TOP_L, OUTER_EYE_L]]) {
+          const c = centroid(arr.map(i => P[i]).filter(Boolean)); const eye = P[oe];
+          spots.push({ x: eye ? c.x + (eye.x - c.x) * 0.3 : c.x, y: eye ? c.y + (eye.y - c.y) * 0.3 : c.y, r: fw * 0.09 });
+        }
+        for (const i of [INNER_EYE_R, INNER_EYE_L, CUPID_R, CUPID_L]) { const q = P[i]; if (q) spots.push({ x: q.x, y: q.y, r: fw * 0.03 }); }
+        for (const np of NOSE_BRIDGE) { const q = P[np]; if (q) spots.push({ x: q.x, y: q.y, r: fw * 0.028 }); }
+        for (const sdot of spots) {
+          const m = blobFan(sdot.x, sdot.y, sdot.r, sdot.r, 0); if (!m) continue;
+          drawMesh(tintProg, loc.tint, m, () => tintUniforms(shade, it * 0.26, 0.95));
+        }
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // restore premultiplied OVER
       }
-      // brows / skinTint / bronzer / contour / highlighter: WebGL stages 2-3 (skipped for now)
     }
 
     // present onto the visible 2D canvas
