@@ -7,8 +7,9 @@ import { PillButton } from "@/components/eleve/PillButton";
 import { PaletteStrip } from "@/components/eleve/PaletteStrip";
 import { ProductCard } from "@/components/eleve/ProductCard";
 import { CountUp } from "@/components/eleve/CountUp";
-import { getLook } from "@/lib/eleve-mock";
+import { useLook } from "@/lib/looks-api";
 import { savedStore, useIsSaved } from "@/lib/saved-store";
+import { requireAuth } from "@/lib/auth-store";
 
 export const Route = createFileRoute("/_app/looks/$id")({
   head: () => ({ meta: [{ title: "A look — Élevé" }] }),
@@ -23,19 +24,19 @@ export const Route = createFileRoute("/_app/looks/$id")({
 function LookDetail() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const look = getLook(id);
+  const { data: look, isLoading, isError } = useLook(id);
   const isSaved = useIsSaved(id);
-  if (!look) throw notFound();
+
+  if (isLoading) return <Frame withNav><div className="card-atelier p-8 shimmer h-64" /></Frame>;
+  if (isError || !look) throw notFound();
 
   const swatches = look.palette.map((hex, i) => ({ hex, name: ["Light", "Soft", "Mid", "Accent", "Anchor"][i] ?? "" }));
 
   function onSave() {
-    const next = savedStore.toggle(look!.id);
-    if (next) toast("Saved to your wardrobe ✦", { className: "eleve-toast" });
-  }
-
-  function onShare() {
-    toast("Share card ready ✦", { className: "eleve-toast" });
+    requireAuth("Save to your wardrobe", () => {
+      const next = savedStore.toggle(look!.id);
+      if (next) toast("Saved to your wardrobe ✦", { className: "eleve-toast" });
+    });
   }
 
   return (
@@ -53,10 +54,7 @@ function LookDetail() {
         </h1>
         <div className="text-right shrink-0 rise" style={{ animationDelay: "420ms" }}>
           <div className="eyebrow">Harmony</div>
-          <div
-            className="serif-display text-champagne leading-none"
-            style={{ fontSize: 56, fontWeight: 500 }}
-          >
+          <div className="serif-display text-champagne leading-none" style={{ fontSize: 56, fontWeight: 500 }}>
             <CountUp to={look.harmony} duration={1400} />
           </div>
         </div>
@@ -77,7 +75,7 @@ function LookDetail() {
         <div className="eyebrow mb-3">The pieces</div>
         <div className="flex flex-col gap-3">
           {look.products.map((p, i) => (
-            <ProductCard key={p.kind} product={p} delay={700 + i * 80} />
+            <ProductCard key={p.kind + i} product={p} delay={700 + i * 80} />
           ))}
         </div>
       </div>
@@ -85,23 +83,18 @@ function LookDetail() {
       <div className="mt-10 flex flex-col gap-3">
         <PillButton
           onClick={() => navigate({ to: "/mirror" })}
-          className="bg-champagne text-espresso"
           style={{ backgroundColor: "var(--champagne)", color: "var(--espresso)" }}
         >
           See it on me · The mirror
         </PillButton>
         <div className="grid grid-cols-2 gap-3">
           <PillButton variant="ghost" onClick={onSave}>
-            <Bookmark
-              size={14}
-              strokeWidth={1.5}
-              className="mr-2"
-              fill={isSaved ? "var(--champagne)" : "none"}
-            />
+            <Bookmark size={14} strokeWidth={1.5} className="mr-2"
+              fill={isSaved ? "var(--champagne)" : "none"} />
             {isSaved ? "Saved" : "Save"}
           </PillButton>
           <Link to="/share/$id" params={{ id }} className="block">
-            <PillButton variant="ink" onClick={onShare}>
+            <PillButton variant="ink">
               <Share2 size={14} strokeWidth={1.5} className="mr-2" /> Share
             </PillButton>
           </Link>
