@@ -4,7 +4,7 @@ import { ScreenHeader } from "@/components/eleve/ScreenHeader";
 import { LookCard } from "@/components/eleve/LookCard";
 import { looks } from "@/lib/eleve-mock";
 
-export const Route = createFileRoute("/_app/looks")({
+export const Route = createFileRoute("/_app/looks/")({
   head: () => ({ meta: [{ title: "Curated looks — Élevé" }] }),
   component: Looks,
 });
