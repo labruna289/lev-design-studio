@@ -122,16 +122,16 @@ void main(){
   float cover = smoothstep(0.0, max(uFeather,1e-3), vEdge) * uOpacity;
   if (cover <= 0.0){ gl_FragColor = vec4(0.0); return; }
 
-  // RELIGHT the makeup shade by the face's shading: keep the shade's exact hue
-  // AND darkness, modulated by how bright/dark the underlying skin pixel is.
-  // (Scaling uColor by a scalar preserves hue/saturation exactly; the ratio
-  //  carries pores, lip lines, lid shading — luminance-preserving recolor.)
-  float Yb  = luma(base);
-  float Ymk = max(luma(uColor), 0.08);
-  float ratio = clamp(Yb / Ymk, 0.0, 1.45);
-  vec3 col = uColor * ratio;
+  // Transfer the shade and keep the skin's SHADING as luminance detail around
+  // it: set the base color to the shade, then add the pixel's deviation from a
+  // mid skin tone as +/- brightness. A dark shade stays dark (deep cherry stays
+  // deep cherry, espresso stays smoky) while pores / lip lines / lid shadow
+  // still read through — instead of brightening dark shades into neon.
+  float Yb = luma(base);
+  float detail = (Yb - 0.55) * 0.7;
+  vec3 col = clamp(uColor + detail, 0.0, 1.0);
 
-  float peak = smoothstep(0.6, 0.95, Yb);
+  float peak = smoothstep(0.62, 0.96, Yb);
   // matte: knock back specular highlights for a powdery finish
   col = mix(col, col * 0.82, clamp(uMatte + uSatin*0.35, 0.0, 1.0) * peak);
   // gloss: add a sharpened specular lobe from base luma peaks
