@@ -331,102 +331,104 @@ export function createMakeupRenderer() {
 
   /* ---------- EYE products ---------- */
 
-  function liftToward(arc, target, fLo, fHi) {
-    const n = arc.length, tc = centroid(target);
-    return arc.map((p, i) => {
-      const t = i / (n - 1), f = fHi - (fHi - fLo) * t;
-      return { x: p.x + (tc.x - p.x) * f * 0.0 + (tc.x - centroid(arc).x) * 0, y: p.y + (tc.y - p.y) * f };
-    });
+  // Per-point unit normals along a lash line, each forced to point AWAY from
+  // the eye centre (i.e. onto the lid). This is what keeps everything off the
+  // eyeball regardless of the mirror or which corner the array starts at.
+  function lidNormals(lash, eyeC) {
+    const n = lash.length, out = [];
+    for (let i = 0; i < n; i++) {
+      const prev = lash[Math.max(0, i - 1)], next = lash[Math.min(n - 1, i + 1)];
+      const tx = next.x - prev.x, ty = next.y - prev.y; const len = Math.hypot(tx, ty) || 1;
+      let nx = -ty / len, ny = tx / len;
+      if ((lash[i].x + nx - eyeC.x) ** 2 + (lash[i].y + ny - eyeC.y) ** 2 < (lash[i].x - eyeC.x) ** 2 + (lash[i].y - eyeC.y) ** 2) { nx = -nx; ny = -ny; }
+      out.push({ nx, ny });
+    }
+    return out;
   }
 
   function paintEyeshadow(ctx, P, fw, rgb, finish, intensity, style) {
     style = style || "lid";
     const zones = {
-      lid: ["lid"],
-      halo: ["lid", "inner"],
-      smoky: ["lid", "crease", "outerV", "lower"],
-      outerV: ["lid", "outerV"],
-      fullCrease: ["lid", "crease"],
+      lid: ["lid"], halo: ["lid", "inner"], smoky: ["lid", "crease", "outerV", "lower"],
+      outerV: ["lid", "outerV"], fullCrease: ["lid", "crease"],
     }[style] || ["lid"];
-    const W = ctxW(ctx), H = ctxH(ctx);
-    for (const [lashIdx, creaseIdx, outerI, innerI, lowerIdx] of [
-      [UPPER_LASH_R, CREASE_R, OUTER_EYE_R, INNER_EYE_R, LOWER_LASH_R],
-      [UPPER_LASH_L, CREASE_L, OUTER_EYE_L, INNER_EYE_L, LOWER_LASH_L],
+    const smoky = style === "smoky";
+    for (const [lashIdx, outerI, innerI, lowerIdx] of [
+      [UPPER_LASH_R, OUTER_EYE_R, INNER_EYE_R, LOWER_LASH_R],
+      [UPPER_LASH_L, OUTER_EYE_L, INNER_EYE_L, LOWER_LASH_L],
     ]) {
       const lash = lashIdx.map(i => P[i]); if (lash.some(p => !p)) continue;
-      const crease = creaseIdx.map(i => P[i]).filter(Boolean);
-      const lashC = centroid(lash);
-      const creaseC = crease.length ? centroid(crease) : { x: lashC.x, y: lashC.y - fw * 0.1 };
-      const lift = { x: creaseC.x - lashC.x, y: creaseC.y - lashC.y };
-      const n = lash.length;
-      const all = lash.concat(crease.length ? crease.slice().reverse() : lash.map((p, i) => {
-        const t = i / (n - 1), f = 0.65 - 0.3 * t;
-        return { x: p.x + lift.x * f, y: p.y + lift.y * f };
-      }).reverse());
-      const bb = bboxOf(all, fw * 0.08);
-      const L = layer("eye_" + lashIdx[0], bb.w, bb.h); const o = L.ctx;
-      const blur = clamp(fw * 0.032, 1.5, 5);
       const lowerArc = lowerIdx.map(i => P[i]).filter(Boolean);
+      const n = lash.length;
+      const eyeC = centroid(lash.concat(lowerArc));   // centre of the eye opening
+      const norm = lidNormals(lash, eyeC);
+      const outerAtStart = lashIdx[0] === outerI;     // R: outer=33 at idx0; L: outer=263 at end
+      const outerness = (i) => outerAtStart ? 1 - i / (n - 1) : i / (n - 1);
+      // lid band: lash line lifted onto the lid by the outward normal (taller
+      // toward the outer corner for a subtle wing). Never crosses the eye.
+      const lidH = fw * (zones.includes("crease") || zones.includes("outerV") ? 0.085 : 0.058);
+      const upper = lash.map((p, i) => {
+        const h = lidH * (0.7 + outerness(i) * 0.6);
+        return { x: p.x + norm[i].nx * h, y: p.y + norm[i].ny * h };
+      });
+      const region = lash.concat(upper.slice().reverse());
+      const bb = bboxOf(region, fw * 0.06);
+      const L = layer("eye_" + lashIdx[0], bb.w, bb.h); const o = L.ctx;
+      const blur = clamp(fw * 0.03, 1.5, 5);
+      const lashC = centroid(lash), upC = centroid(upper);
 
-      // LID WASH
-      if (zones.includes("lid")) {
-        const upper = lash.map((p, i) => { const t = i / (n - 1), f = 0.55 - 0.24 * t; return { x: p.x + lift.x * f, y: p.y + lift.y * f }; });
-        const region = lash.concat(upper.slice().reverse());
-        o.filter = `blur(${blur}px)`;
-        const g = o.createLinearGradient(lashC.x - bb.x, lashC.y - bb.y, creaseC.x - bb.x, creaseC.y - bb.y);
-        g.addColorStop(0, rgba(rgb, 0.5)); g.addColorStop(0.55, rgba(rgb, 0.2)); g.addColorStop(1, rgba(rgb, 0));
-        o.fillStyle = g; const p = new Path2D(); traceSmooth(p, region, bb.x, bb.y); o.fill(p);
-        o.filter = "none";
+      // LID WASH — strong at the lash line, fading up toward the crease
+      o.filter = `blur(${blur}px)`;
+      const g = o.createLinearGradient(lashC.x - bb.x, lashC.y - bb.y, upC.x - bb.x, upC.y - bb.y);
+      g.addColorStop(0, rgba(rgb, 0.5)); g.addColorStop(0.6, rgba(rgb, 0.2)); g.addColorStop(1, rgba(rgb, 0));
+      o.fillStyle = g; { const p = new Path2D(); traceSmooth(p, region, bb.x, bb.y); o.fill(p); }
+      o.filter = "none";
+
+      // CREASE deepening — a darker band near the top of the lid (no reliance
+      // on shaky crease landmarks; derived from the lash + normal).
+      if (zones.includes("crease")) {
+        const creaseLine = lash.map((p, i) => ({ x: p.x + norm[i].nx * lidH * 0.8, y: p.y + norm[i].ny * lidH * 0.8 }));
+        o.filter = `blur(${blur * 1.2}px)`;
+        o.strokeStyle = rgba(rgb.map(v => v * 0.7), 0.5); o.lineWidth = fw * 0.03; o.lineCap = "round";
+        const p = new Path2D(); tracePolyline(p, creaseLine, bb.x, bb.y); o.stroke(p); o.filter = "none";
       }
-      // CREASE deepening
-      if (zones.includes("crease") && crease.length) {
-        o.filter = `blur(${blur}px)`;
-        o.strokeStyle = rgba(rgb.map(v => v * 0.8), 0.45); o.lineWidth = fw * 0.035; o.lineCap = "round";
-        const p = new Path2D(); tracePolyline(p, crease, bb.x, bb.y); o.stroke(p);
-        o.filter = "none";
-      }
-      // OUTER-V
+      // OUTER-V — wedge at the outer corner pushed up-and-out, away from the eye
       if (zones.includes("outerV")) {
-        const outer = P[outerI];
+        const oi = outerAtStart ? 0 : n - 1;
+        const ox = lash[oi].x + norm[oi].nx * lidH * 0.7, oy = lash[oi].y + norm[oi].ny * lidH * 0.7;
         o.filter = `blur(${blur}px)`;
-        softBlob(o, outer.x - bb.x, outer.y - bb.y, fw * 0.05, rgb.map(v => v * 0.6), 0.45);
+        softBlob(o, ox - bb.x, oy - bb.y, fw * 0.05, rgb.map(v => v * 0.55), 0.5);
         o.filter = "none";
       }
-      // LOWER smoke (under the lower lash only)
+      // LOWER smoke — thin band along the lower lash (smoky only)
       if (zones.includes("lower") && lowerArc.length) {
-        o.filter = `blur(${blur}px)`; o.strokeStyle = rgba(rgb, 0.28); o.lineWidth = fw * 0.016; o.lineCap = "round";
+        o.filter = `blur(${blur}px)`; o.strokeStyle = rgba(rgb, 0.22); o.lineWidth = fw * 0.013; o.lineCap = "round";
         const p = new Path2D(); tracePolyline(p, lowerArc, bb.x, bb.y); o.stroke(p); o.filter = "none";
       }
 
-      // KEEP SHADOW ON THE LID — punch out the open eye so it never darkens
-      // the eyeball (this is what prevents the "black socket" look).
+      // Punch out the open eye so shadow never touches the eyeball.
       if (lowerArc.length) {
         const aperture = lash.concat(lowerArc.slice().reverse());
         o.globalCompositeOperation = "destination-out";
-        o.filter = `blur(${Math.max(1, blur * 0.5)}px)`;
-        o.fillStyle = "#fff";
+        o.filter = `blur(${Math.max(1, blur * 0.45)}px)`; o.fillStyle = "#fff";
         const ap = new Path2D(); traceSmooth(ap, aperture, bb.x, bb.y); o.fill(ap);
         o.filter = "none"; o.globalCompositeOperation = "source-over";
       }
 
       if (finish === "shimmer" || finish === "metallic") addSpeckle(o, bb, finish === "metallic" ? 0.2 : 0.12);
 
-      // composite: one luminance-preserving multiply pass; add a gentle
-      // soft-light sheen only for light finishes (avoids compounding into a
-      // flat black socket).
-      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = 0.4 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = (smoky ? 0.46 : 0.4) * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
       if (finish === "satin" || finish === "shimmer") {
-        ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.18 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+        ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.16 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
       }
       reset(ctx);
 
-      // INNER-CORNER highlight — nudge off the wet inner corner toward the
-      // nose bridge so it sits on skin, not the eyeball.
+      // INNER-CORNER highlight (halo) — off the eye, onto skin toward the nose
       if (zones.includes("inner")) {
         const inner = P[innerI], bridge = P[6];
         const hx = bridge ? inner.x + (bridge.x - inner.x) * 0.35 : inner.x;
         const hy = (bridge ? inner.y + (bridge.y - inner.y) * 0.2 : inner.y) + fw * 0.015;
-        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.24 * intensity;
+        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.22 * intensity;
         softBlob(ctx, hx, hy, fw * 0.016, [255, 245, 230], 0.4);
         reset(ctx);
       }
