@@ -199,10 +199,11 @@ export async function startMakeup({ canvasVideo, canvasAR }) {
       overlayCanvas: [canvasAR],
       callback: () => {
         Shape2D.init({
-          NNCPath: `${BASE}/neuralNets/NN_MAKEUP_2.json`,
+          // Dedicated lips model — best lip tracking (NN_MAKEUP_2 degraded it).
+          NNCPath: `${BASE}/neuralNets/NN_LIPS_8.json`,
           canvasVideo,
           canvasAR,
-          shapes: [SHAPELIPS, SHAPEEYES, SHAPECHEEKS],
+          shapes: [SHAPELIPS],
         }).then(() => resolve()).catch((e: any) => reject(e instanceof Error ? e : new Error(String(e))));
       },
     });
@@ -212,13 +213,15 @@ export async function startMakeup({ canvasVideo, canvasAR }) {
 
 /* ---- runtime controls ---- */
 function helper() { return (window as any).WebARRocksFaceShape2DHelper; }
+// guarded — a shape not present in the active model (e.g. EYES/CHEEKS while
+// running the lips-only model) is a safe no-op instead of throwing.
 export function setShapeColor(shape: string, uniform: string, rgb255: number[]) {
   const h = helper(); if (!h) return;
-  h.set_uniformValue(shape, uniform, [rgb255[0] / 255, rgb255[1] / 255, rgb255[2] / 255]);
+  try { h.set_uniformValue(shape, uniform, [rgb255[0] / 255, rgb255[1] / 255, rgb255[2] / 255]); } catch {}
 }
 export function setShapeOpacity(shape: string, o: number) {
   const h = helper(); if (!h) return;
-  h.set_uniformValue(shape, "uOpacity", [o]);
+  try { h.set_uniformValue(shape, "uOpacity", [o]); } catch {}
 }
 
 export async function destroyWebARRocks() {
