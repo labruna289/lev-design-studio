@@ -15,8 +15,14 @@ import {
   computeFaceRegion,
   heuristicLandmarks,
   analyzeFacePixels,
+  extractLandmarksJSON,
+  validateLandmarks,
+  expandBox,
+  landmarksFromCrop,
+  clampPt,
 } from "@/lib/mirror-logic";
 import { detectWithFaceMesh } from "@/lib/facemesh-tier";
+import { supabase } from "@/integrations/supabase/client";
 
 type TintType = "lip" | "blush" | "eye";
 type Tint = { id: string; type: TintType; x: number; y: number; size?: number; shade: string };
