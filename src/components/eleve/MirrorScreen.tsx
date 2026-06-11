@@ -475,13 +475,7 @@ export default function MirrorScreen() {
             alt=""
             className="absolute inset-0 h-full w-full object-cover"
             draggable={false}
-            style={{
-              filter: look.filter,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-            }}
+            style={{ filter: look.filter, ...gradeMaskStyle }}
           />
           {/* 3. bloom */}
           <img
@@ -493,10 +487,7 @@ export default function MirrorScreen() {
               filter: "blur(10px) brightness(1.2) saturate(1.05)",
               mixBlendMode: "screen",
               opacity: look.bloom * intensity,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
+              ...gradeMaskStyle,
             }}
           />
           {/* 4. wash */}
@@ -505,20 +496,38 @@ export default function MirrorScreen() {
             style={{
               background: look.wash,
               mixBlendMode: look.washBlend,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
+              ...gradeMaskStyle,
             }}
           />
-          {/* 5. tints */}
-          {tints.map((t) => (
-            <div key={t.id + "-c"} className="absolute inset-0 pointer-events-none"
-              style={{ mixBlendMode: "color", backgroundImage: tintBg(t, intensity)(STRENGTHS[t.type].color * intensity) }} />
-          ))}
-          {tints.map((t) => (
-            <div key={t.id + "-m"} className="absolute inset-0 pointer-events-none"
-              style={{ mixBlendMode: "multiply", backgroundImage: tintBg(t, intensity)(STRENGTHS[t.type].multiply * intensity) }} />
-          ))}
+          {/* 5. tints — lips use the FaceMesh lipOuter polygon when present
+              (clip-path + 2px blur feather), everything else uses the radial
+              ellipse renderer. */}
+          {tints.map((t) => {
+            const useLipClip = t.type === "lip" && lipClipPath;
+            const colorA = STRENGTHS[t.type].color * intensity;
+            const multA = STRENGTHS[t.type].multiply * intensity;
+            if (useLipClip) {
+              return (
+                <div key={t.id + "-lip"} className="absolute inset-0 pointer-events-none"
+                  style={{ clipPath: lipClipPath!, WebkitClipPath: lipClipPath! as any, filter: "blur(2px)" }}>
+                  <div className="absolute inset-0"
+                    style={{ background: hexA(t.shade, colorA), mixBlendMode: "color" }} />
+                  <div className="absolute inset-0"
+                    style={{ background: hexA(t.shade, multA), mixBlendMode: "multiply" }} />
+                </div>
+              );
+            }
+            return (
+              <div key={t.id + "-wrap"}>
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{ mixBlendMode: "color", backgroundImage: tintBg(t, intensity)(colorA) }} />
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{ mixBlendMode: "multiply", backgroundImage: tintBg(t, intensity)(multA) }} />
+              </div>
+            );
+          })}
         </div>
+
 
         {/* Tint drag handles (small invisible discs you can grab) */}
         {tints.map((t) => (
