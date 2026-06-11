@@ -165,7 +165,26 @@ export default function MirrorScreen() {
           }
         }
       }
-      // 3) edge function — not yet wired, skip
+      // 3) Vision model via Lovable Cloud edge function (two-pass with gridded image)
+      if (!stageMap) {
+        try {
+          const lmFull = await detectLandmarksViaEdge(img);
+          if (lmFull) {
+            const sf: any = { face_found: true, stage: true };
+            const eL = clampPt(lmFull.eyelid_left);
+            const eR = clampPt(lmFull.eyelid_right);
+            const cL = clampPt(lmFull.cheek_left);
+            const cR = clampPt(lmFull.cheek_right);
+            const lips = clampPt(lmFull.lips);
+            if (eL) sf.eye_left = coverMap(eL.x, eL.y, photo.aspect);
+            if (eR) sf.eye_right = coverMap(eR.x, eR.y, photo.aspect);
+            if (cL) sf.cheek_left = coverMap(cL.x, cL.y, photo.aspect);
+            if (cR) sf.cheek_right = coverMap(cR.x, cR.y, photo.aspect);
+            if (lips) sf.mouth = coverMap(lips.x, lips.y, photo.aspect);
+            if (validateFeatureMap(sf)) stageMap = sf;
+          }
+        } catch {}
+      }
       // 4) heuristic
       let placedByEye = false;
       if (!stageMap) { stageMap = heuristicFeatureMap(); placedByEye = true; }
