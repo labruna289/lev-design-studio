@@ -13,7 +13,15 @@ import { Route as UploadRouteImport } from './routes/upload'
 import { Route as ConsentRouteImport } from './routes/consent'
 import { Route as AnalyzingRouteImport } from './routes/analyzing'
 import { Route as AnalysisRouteImport } from './routes/analysis'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppSavedRouteImport } from './routes/_app.saved'
+import { Route as AppProfileRouteImport } from './routes/_app.profile'
+import { Route as AppMirrorRouteImport } from './routes/_app.mirror'
+import { Route as AppAppRouteImport } from './routes/_app.app'
+import { Route as AppLooksIndexRouteImport } from './routes/_app.looks.index'
+import { Route as AppShareIdRouteImport } from './routes/_app.share.$id'
+import { Route as AppLooksIdRouteImport } from './routes/_app.looks.$id'
 
 const UploadRoute = UploadRouteImport.update({
   id: '/upload',
@@ -35,10 +43,49 @@ const AnalysisRoute = AnalysisRouteImport.update({
   path: '/analysis',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppSavedRoute = AppSavedRouteImport.update({
+  id: '/saved',
+  path: '/saved',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppMirrorRoute = AppMirrorRouteImport.update({
+  id: '/mirror',
+  path: '/mirror',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAppRoute = AppAppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLooksIndexRoute = AppLooksIndexRouteImport.update({
+  id: '/looks/',
+  path: '/looks/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppShareIdRoute = AppShareIdRouteImport.update({
+  id: '/share/$id',
+  path: '/share/$id',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppLooksIdRoute = AppLooksIdRouteImport.update({
+  id: '/looks/$id',
+  path: '/looks/$id',
+  getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -47,6 +94,13 @@ export interface FileRoutesByFullPath {
   '/analyzing': typeof AnalyzingRoute
   '/consent': typeof ConsentRoute
   '/upload': typeof UploadRoute
+  '/app': typeof AppAppRoute
+  '/mirror': typeof AppMirrorRoute
+  '/profile': typeof AppProfileRoute
+  '/saved': typeof AppSavedRoute
+  '/looks/$id': typeof AppLooksIdRoute
+  '/share/$id': typeof AppShareIdRoute
+  '/looks/': typeof AppLooksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,25 +108,79 @@ export interface FileRoutesByTo {
   '/analyzing': typeof AnalyzingRoute
   '/consent': typeof ConsentRoute
   '/upload': typeof UploadRoute
+  '/app': typeof AppAppRoute
+  '/mirror': typeof AppMirrorRoute
+  '/profile': typeof AppProfileRoute
+  '/saved': typeof AppSavedRoute
+  '/looks/$id': typeof AppLooksIdRoute
+  '/share/$id': typeof AppShareIdRoute
+  '/looks': typeof AppLooksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
   '/analysis': typeof AnalysisRoute
   '/analyzing': typeof AnalyzingRoute
   '/consent': typeof ConsentRoute
   '/upload': typeof UploadRoute
+  '/_app/app': typeof AppAppRoute
+  '/_app/mirror': typeof AppMirrorRoute
+  '/_app/profile': typeof AppProfileRoute
+  '/_app/saved': typeof AppSavedRoute
+  '/_app/looks/$id': typeof AppLooksIdRoute
+  '/_app/share/$id': typeof AppShareIdRoute
+  '/_app/looks/': typeof AppLooksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/analysis' | '/analyzing' | '/consent' | '/upload'
+  fullPaths:
+    | '/'
+    | '/analysis'
+    | '/analyzing'
+    | '/consent'
+    | '/upload'
+    | '/app'
+    | '/mirror'
+    | '/profile'
+    | '/saved'
+    | '/looks/$id'
+    | '/share/$id'
+    | '/looks/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/analysis' | '/analyzing' | '/consent' | '/upload'
-  id: '__root__' | '/' | '/analysis' | '/analyzing' | '/consent' | '/upload'
+  to:
+    | '/'
+    | '/analysis'
+    | '/analyzing'
+    | '/consent'
+    | '/upload'
+    | '/app'
+    | '/mirror'
+    | '/profile'
+    | '/saved'
+    | '/looks/$id'
+    | '/share/$id'
+    | '/looks'
+  id:
+    | '__root__'
+    | '/'
+    | '/_app'
+    | '/analysis'
+    | '/analyzing'
+    | '/consent'
+    | '/upload'
+    | '/_app/app'
+    | '/_app/mirror'
+    | '/_app/profile'
+    | '/_app/saved'
+    | '/_app/looks/$id'
+    | '/_app/share/$id'
+    | '/_app/looks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   AnalysisRoute: typeof AnalysisRoute
   AnalyzingRoute: typeof AnalyzingRoute
   ConsentRoute: typeof ConsentRoute
@@ -109,6 +217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalysisRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -116,11 +231,83 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/saved': {
+      id: '/_app/saved'
+      path: '/saved'
+      fullPath: '/saved'
+      preLoaderRoute: typeof AppSavedRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/profile': {
+      id: '/_app/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/mirror': {
+      id: '/_app/mirror'
+      path: '/mirror'
+      fullPath: '/mirror'
+      preLoaderRoute: typeof AppMirrorRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/app': {
+      id: '/_app/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppAppRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/looks/': {
+      id: '/_app/looks/'
+      path: '/looks'
+      fullPath: '/looks/'
+      preLoaderRoute: typeof AppLooksIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/share/$id': {
+      id: '/_app/share/$id'
+      path: '/share/$id'
+      fullPath: '/share/$id'
+      preLoaderRoute: typeof AppShareIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/looks/$id': {
+      id: '/_app/looks/$id'
+      path: '/looks/$id'
+      fullPath: '/looks/$id'
+      preLoaderRoute: typeof AppLooksIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
+interface AppRouteChildren {
+  AppAppRoute: typeof AppAppRoute
+  AppMirrorRoute: typeof AppMirrorRoute
+  AppProfileRoute: typeof AppProfileRoute
+  AppSavedRoute: typeof AppSavedRoute
+  AppLooksIdRoute: typeof AppLooksIdRoute
+  AppShareIdRoute: typeof AppShareIdRoute
+  AppLooksIndexRoute: typeof AppLooksIndexRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAppRoute: AppAppRoute,
+  AppMirrorRoute: AppMirrorRoute,
+  AppProfileRoute: AppProfileRoute,
+  AppSavedRoute: AppSavedRoute,
+  AppLooksIdRoute: AppLooksIdRoute,
+  AppShareIdRoute: AppShareIdRoute,
+  AppLooksIndexRoute: AppLooksIndexRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   AnalysisRoute: AnalysisRoute,
   AnalyzingRoute: AnalyzingRoute,
   ConsentRoute: ConsentRoute,
