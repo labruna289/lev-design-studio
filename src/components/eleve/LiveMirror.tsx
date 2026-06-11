@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CameraOff, Download } from "lucide-react";
 import { getVideoLandmarker, detectVideoFrame } from "@/lib/facemesh-tier";
@@ -26,6 +26,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [faceFound, setFaceFound] = useState(false);
+  const [startKey, setStartKey] = useState(0);
 
   const [lookIdx, setLookIdx] = useState(0);
   const look: LookGrade = LOOK_GRADES[lookIdx];
@@ -48,47 +49,54 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     setShades(LOOK_GRADES[lookIdx].defaults);
   }, [lookIdx]);
 
-  const startCamera = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const video = videoRef.current!;
-      video.srcObject = stream;
-      await video.play();
-
-      const lmkr = await getVideoLandmarker();
-      if (!lmkr) {
-        setError("Face detection model could not load.");
-        setLoading(false);
-        return;
-      }
-      landmarkerRef.current = lmkr;
-      rendererRef.current = createMakeupRenderer();
-      setCameraReady(true);
-      setLoading(false);
-    } catch (e: any) {
-      setError(e?.message || "Camera access denied.");
-      setLoading(false);
-    }
-  }, []);
-
-  const stopCamera = useCallback(() => {
-    cancelAnimationFrame(rafRef.current);
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    streamRef.current = null;
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setCameraReady(false);
-  }, []);
-
+  // Camera + model lifecycle. A `cancelled` guard makes this safe against
+  // React StrictMode's dev double-mount; re-runs when `startKey` changes
+  // (the "Try again" button). play() rejections are benign and ignored —
+  // the render loop only needs the video's readyState, not play() success.
   useEffect(() => {
-    startCamera();
-    return stopCamera;
-  }, [startCamera, stopCamera]);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
+          audio: false,
+        });
+        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current!;
+        video.srcObject = stream;
+        video.play().catch(() => {}); // swallow benign AbortError on remount
+
+        const lmkr = await getVideoLandmarker();
+        if (cancelled) return;
+        if (!lmkr) {
+          setError("Face detection model could not load.");
+          setLoading(false);
+          return;
+        }
+        landmarkerRef.current = lmkr;
+        rendererRef.current = createMakeupRenderer();
+        setCameraReady(true);
+        setLoading(false);
+      } catch (e: any) {
+        if (cancelled) return;
+        setError(e?.name === "NotAllowedError"
+          ? "Camera access denied. Allow it in your browser, then try again."
+          : (e?.message || "Could not start the camera."));
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      if (videoRef.current) videoRef.current.srcObject = null;
+      setCameraReady(false);
+    };
+  }, [startKey]);
 
   // The render loop — draws video + makeup to the canvas every frame.
   useEffect(() => {
@@ -225,7 +233,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
             <div className="text-center px-6">
               <CameraOff size={32} className="mx-auto text-espresso mb-3" strokeWidth={1.25} />
               <div className="serif-display italic text-espresso text-[16px]">{error}</div>
-              <button onClick={startCamera} className="mt-4 pill bg-champagne text-espresso press text-[13px]">
+              <button onClick={() => setStartKey((k) => k + 1)} className="mt-4 pill bg-champagne text-espresso press text-[13px]">
                 Try again
               </button>
             </div>
