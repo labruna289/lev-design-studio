@@ -194,11 +194,16 @@ export default function MirrorScreen() {
       const img = await loadImage(photo.dataUrl);
       // 1) FaceMesh
       let stageMap: FeatureMap | null = null;
+      let nextContours: Contours | null = null;
       try {
         const r = await detectWithFaceMesh(img as any, photo.aspect, {
           coverMap, validateFeatureMap, deriveFromFeatureMap,
         });
-        if (r) stageMap = r.stageMap as FeatureMap;
+        if (r) {
+          stageMap = r.stageMap as FeatureMap;
+          const c = (r.stageMap as any).contours as Contours | undefined;
+          if (c && (c.lipOuter || c.faceOval)) nextContours = c;
+        }
       } catch {}
       // 2) pixel analysis
       if (!stageMap) {
@@ -239,6 +244,7 @@ export default function MirrorScreen() {
       let placedByEye = false;
       if (!stageMap) { stageMap = heuristicFeatureMap(); placedByEye = true; }
       setFeatureMap(stageMap);
+      setContours(nextContours);
       const lm = deriveFromFeatureMap(stageMap as any);
       if (!lm) throw new Error("derive failed");
       (lm as any).stage = true;
