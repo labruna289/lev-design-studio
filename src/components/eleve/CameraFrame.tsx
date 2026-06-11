@@ -1,14 +1,17 @@
 import { Camera } from "lucide-react";
 import { useRef, useState, type ChangeEvent } from "react";
+import { photoStore, usePhoto } from "@/lib/photo-store";
 
 export function CameraFrame() {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const existing = usePhoto();
+  const [preview, setPreview] = useState<string | null>(existing?.dataUrl ?? null);
 
-  function onFile(e: ChangeEvent<HTMLInputElement>) {
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setPreview(URL.createObjectURL(file));
+    await photoStore.setFromFile(file);
+    setPreview(photoStore.get()?.dataUrl ?? null);
   }
 
   return (
