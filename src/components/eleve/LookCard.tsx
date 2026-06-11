@@ -4,6 +4,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import type { Look } from "@/lib/eleve-mock";
 import { savedStore, useIsSaved } from "@/lib/saved-store";
+import { requireAuth } from "@/lib/auth-store";
 import { CountUp } from "./CountUp";
 
 export function LookCard({ look, index = 0 }: { look: Look; index?: number }) {
@@ -13,13 +14,13 @@ export function LookCard({ look, index = 0 }: { look: Look; index?: number }) {
   function onSave(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    const next = savedStore.toggle(look.id);
-    if (next) {
-      setBurst((b) => b + 1);
-      toast("Saved to your wardrobe ✦", {
-        className: "eleve-toast",
-      });
-    }
+    requireAuth("Save to your wardrobe", () => {
+      const next = savedStore.toggle(look.id);
+      if (next) {
+        setBurst((b) => b + 1);
+        toast("Saved to your wardrobe ✦", { className: "eleve-toast" });
+      }
+    });
   }
 
   return (

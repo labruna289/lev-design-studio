@@ -4,8 +4,9 @@ import { ScreenHeader } from "@/components/eleve/ScreenHeader";
 import { LookCard } from "@/components/eleve/LookCard";
 import { Monogram } from "@/components/eleve/Monogram";
 import { PillButton } from "@/components/eleve/PillButton";
-import { looks } from "@/lib/eleve-mock";
+import { useLooks } from "@/lib/looks-api";
 import { useSaved } from "@/lib/saved-store";
+import { useSession } from "@/lib/auth-store";
 
 export const Route = createFileRoute("/_app/saved")({
   head: () => ({ meta: [{ title: "Saved — Élevé" }] }),
@@ -13,8 +14,10 @@ export const Route = createFileRoute("/_app/saved")({
 });
 
 function Saved() {
+  useSession(); // ensures saved store pulls from DB on sign-in
   const savedIds = useSaved();
-  const items = looks.filter((l) => savedIds.includes(l.id));
+  const { data: allLooks = [] } = useLooks();
+  const items = allLooks.filter((l) => savedIds.includes(l.id));
 
   return (
     <Frame withNav>
