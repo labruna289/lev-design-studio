@@ -14,7 +14,228 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      analyses: {
+        Row: {
+          contrast: string | null
+          created_at: string
+          face_shape: string | null
+          finish: string | null
+          harmony: number | null
+          id: string
+          metal: string | null
+          notes: string | null
+          palette: Json
+          season: string | null
+          undertone: string | null
+          user_id: string
+        }
+        Insert: {
+          contrast?: string | null
+          created_at?: string
+          face_shape?: string | null
+          finish?: string | null
+          harmony?: number | null
+          id?: string
+          metal?: string | null
+          notes?: string | null
+          palette?: Json
+          season?: string | null
+          undertone?: string | null
+          user_id: string
+        }
+        Update: {
+          contrast?: string | null
+          created_at?: string
+          face_shape?: string | null
+          finish?: string | null
+          harmony?: number | null
+          id?: string
+          metal?: string | null
+          notes?: string | null
+          palette?: Json
+          season?: string | null
+          undertone?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      looks: {
+        Row: {
+          blurb: string
+          created_at: string
+          harmony: number
+          id: string
+          name: string
+          number: string
+          occasion: string
+          palette: Json
+          position: number
+          slug: string
+          why: string
+        }
+        Insert: {
+          blurb: string
+          created_at?: string
+          harmony?: number
+          id?: string
+          name: string
+          number: string
+          occasion: string
+          palette?: Json
+          position?: number
+          slug: string
+          why: string
+        }
+        Update: {
+          blurb?: string
+          created_at?: string
+          harmony?: number
+          id?: string
+          name?: string
+          number?: string
+          occasion?: string
+          palette?: Json
+          position?: number
+          slug?: string
+          why?: string
+        }
+        Relationships: []
+      }
+      products: {
+        Row: {
+          created_at: string
+          house: string
+          id: string
+          initial: string
+          kind: string
+          look_id: string
+          name: string
+          note: string
+          position: number
+          price: string
+        }
+        Insert: {
+          created_at?: string
+          house: string
+          id?: string
+          initial: string
+          kind: string
+          look_id: string
+          name: string
+          note: string
+          position?: number
+          price: string
+        }
+        Update: {
+          created_at?: string
+          house?: string
+          id?: string
+          initial?: string
+          kind?: string
+          look_id?: string
+          name?: string
+          note?: string
+          position?: number
+          price?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_look_id_fkey"
+            columns: ["look_id"]
+            isOneToOne: false
+            referencedRelation: "looks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      saved_looks: {
+        Row: {
+          created_at: string
+          id: string
+          look_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          look_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          look_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_looks_look_id_fkey"
+            columns: ["look_id"]
+            isOneToOne: false
+            referencedRelation: "looks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      share_links: {
+        Row: {
+          created_at: string
+          id: string
+          look_id: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          look_id: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          look_id?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "share_links_look_id_fkey"
+            columns: ["look_id"]
+            isOneToOne: false
+            referencedRelation: "looks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      users: {
+        Row: {
+          budget_register: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          style_direction: string | null
+          updated_at: string
+        }
+        Insert: {
+          budget_register?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          style_direction?: string | null
+          updated_at?: string
+        }
+        Update: {
+          budget_register?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          style_direction?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
