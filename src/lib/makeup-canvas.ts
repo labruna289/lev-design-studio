@@ -393,8 +393,8 @@ export function createMakeupRenderer() {
       // INNER-CORNER highlight
       if (zones.includes("inner")) {
         const inner = P[innerI];
-        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.5 * intensity;
-        softBlob(ctx, inner.x, inner.y, fw * 0.035, [255, 245, 230], 0.7);
+        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.28 * intensity;
+        softBlob(ctx, inner.x, inner.y, fw * 0.028, [255, 245, 230], 0.5);
         reset(ctx);
       }
     }
@@ -486,7 +486,6 @@ export function createMakeupRenderer() {
           o.stroke();
         }
       }
-      o.filter = "blur(0.5px)"; o.drawImage(o.canvas, 0, 0); o.filter = "none";
       if (finish === "glossy") { o.globalCompositeOperation = "screen"; o.globalAlpha = 0.4; softBlob(o, eyeC.x - bb.x, eyeC.y - bb.y - fw * 0.01, fw * 0.02, [255, 255, 255], 0.6); o.globalAlpha = 1; o.globalCompositeOperation = "source-over"; }
       ctx.globalCompositeOperation = "multiply";
       ctx.globalAlpha = (isUpper ? 0.92 : 0.5) * intensity;
@@ -496,18 +495,26 @@ export function createMakeupRenderer() {
   }
 
   function paintHighlighter(ctx, P, fw, rgb, finish, intensity) {
+    // Cheekbone spots sit HIGH on the bone (lift toward the outer eye), kept
+    // small + soft so the result is a sheen, not a white disc.
     const spots = [];
-    for (const arr of [CHEEKBONE_TOP_R, CHEEKBONE_TOP_L]) { const c = centroid(arr.map(i => P[i]).filter(Boolean)); spots.push({ x: c.x, y: c.y, r: fw * 0.1 }); }
+    for (const [arr, outerI] of [[CHEEKBONE_TOP_R, OUTER_EYE_R], [CHEEKBONE_TOP_L, OUTER_EYE_L]]) {
+      const c = centroid(arr.map(i => P[i]).filter(Boolean));
+      const eye = P[outerI];
+      const cx = eye ? c.x + (eye.x - c.x) * 0.3 : c.x;
+      const cy = eye ? c.y + (eye.y - c.y) * 0.3 : c.y;
+      spots.push({ x: cx, y: cy, r: fw * 0.08 });
+    }
     const nose = NOSE_BRIDGE.map(i => P[i]).filter(Boolean);
     const cupids = [P[CUPID_PEAK_R], P[CUPID_PEAK_L]].filter(Boolean);
     const inner = [P[INNER_EYE_R], P[INNER_EYE_L]].filter(Boolean);
     ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = clamp(0.4 * intensity, 0, 0.6);
-    for (const s of spots) softBlob(ctx, s.x, s.y, s.r, rgb, 0.7);
-    for (const i of inner) softBlob(ctx, i.x, i.y, fw * 0.03, rgb, 0.6);
-    for (const c of cupids) softBlob(ctx, c.x, c.y, fw * 0.025, rgb, 0.5);
+    ctx.globalAlpha = clamp(0.22 * intensity, 0, 0.32);
+    for (const s of spots) softBlob(ctx, s.x, s.y, s.r, rgb, 0.45);
+    for (const i of inner) softBlob(ctx, i.x, i.y, fw * 0.022, rgb, 0.4);
+    for (const c of cupids) softBlob(ctx, c.x, c.y, fw * 0.018, rgb, 0.32);
     if (nose.length >= 2) {
-      ctx.save(); ctx.lineCap = "round"; ctx.lineWidth = fw * 0.02; ctx.strokeStyle = rgba(rgb, 0.4 * intensity);
+      ctx.save(); ctx.lineCap = "round"; ctx.lineWidth = fw * 0.014; ctx.strokeStyle = rgba(rgb, 0.22 * intensity);
       const p = new Path2D(); tracePolyline(p, nose); ctx.stroke(p); ctx.restore();
     }
     reset(ctx);
@@ -516,7 +523,7 @@ export function createMakeupRenderer() {
       const L = layer("hlSpk", W, H); const o = L.ctx;
       for (const s of spots) softBlob(o, s.x, s.y, s.r, [255, 255, 255], 1);
       o.globalCompositeOperation = "source-in"; o.drawImage(getSpeckle(), 0, 0, W, H);
-      ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = (finish === "metallic" ? 0.5 : 0.3) * intensity;
+      ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = (finish === "metallic" ? 0.22 : 0.14) * intensity;
       ctx.drawImage(L.canvas, 0, 0);
       reset(ctx);
     }

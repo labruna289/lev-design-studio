@@ -237,14 +237,13 @@ export type LiveProductState = {
 };
 
 /* A curated default "look" preloaded when the live mirror opens —
-   a soft warm everyday face that shows off several products. */
+   intentionally LIGHT (lipstick + soft blush + subtle lid shadow). Brows,
+   mascara, highlighter, contour etc. stay OFF so the default reads natural;
+   the user layers extras on deliberately. */
 export const DEFAULT_LIVE_LOOK: Record<string, LiveProductState> = {
-  "shine-loud":   { shadeHex: "#C2502E", finish: "satin",  intensity: 0.85, enabled: true },
-  "sweet-cheeks": { shadeHex: "#E58A6B", finish: "dewy",   intensity: 0.6,  enabled: true },
-  "ultimate-shadow": { shadeHex: "#B08F66", finish: "satin", intensity: 0.65, enabled: true, style: "lid" },
-  "micro-brow":   { shadeHex: "#6E5640", finish: "satin",  intensity: 0.5,  enabled: true },
-  "epic-lash":    { shadeHex: "#0A0A0A", finish: "matte",  intensity: 0.8,  enabled: true },
-  "jumbo-glow":   { shadeHex: "#F4DEBC", finish: "pearl",  intensity: 0.5,  enabled: true },
+  "shine-loud":      { shadeHex: "#C2502E", finish: "satin", intensity: 0.8,  enabled: true },
+  "sweet-cheeks":    { shadeHex: "#E58A6B", finish: "dewy",  intensity: 0.5,  enabled: true },
+  "ultimate-shadow": { shadeHex: "#B08F66", finish: "satin", intensity: 0.5,  enabled: true, style: "lid" },
 };
 
 /* Curated full-face looks (NYX-style one-tap). */
@@ -252,31 +251,30 @@ export const LIVE_LOOKS: { id: string; title: string; products: Record<string, L
   {
     id: "angel-face", title: "Angel Face",
     products: {
-      "shine-loud": { shadeHex: "#CE8E83", finish: "glossy", intensity: 0.8, enabled: true },
-      "sweet-cheeks": { shadeHex: "#E8B49E", finish: "dewy", intensity: 0.55, enabled: true },
-      "ultimate-shadow": { shadeHex: "#C9A87A", finish: "shimmer", intensity: 0.6, enabled: true, style: "lid" },
-      "jumbo-glow": { shadeHex: "#FBF1E2", finish: "shimmer", intensity: 0.6, enabled: true },
-      "micro-brow": { shadeHex: "#8A7156", finish: "satin", intensity: 0.45, enabled: true },
+      "shine-loud": { shadeHex: "#CE8E83", finish: "glossy", intensity: 0.72, enabled: true },
+      "sweet-cheeks": { shadeHex: "#E8B49E", finish: "dewy", intensity: 0.45, enabled: true },
+      "ultimate-shadow": { shadeHex: "#C9A87A", finish: "shimmer", intensity: 0.45, enabled: true, style: "lid" },
+      "jumbo-glow": { shadeHex: "#FBF1E2", finish: "pearl", intensity: 0.35, enabled: true },
+      "micro-brow": { shadeHex: "#8A7156", finish: "satin", intensity: 0.4, enabled: true },
     },
   },
   {
     id: "ego-glare", title: "Ego Glare",
     products: {
-      "shine-loud": { shadeHex: "#6B2230", finish: "matte", intensity: 0.9, enabled: true },
-      "ultimate-shadow": { shadeHex: "#4A2A1A", finish: "metallic", intensity: 0.8, enabled: true, style: "smoky" },
-      "epic-ink": { shadeHex: "#14100E", finish: "matte", intensity: 0.95, enabled: true, style: "winged" },
-      "epic-lash": { shadeHex: "#0A0A0A", finish: "matte", intensity: 0.9, enabled: true },
-      "wonder-contour": { shadeHex: "#7E614C", finish: "matte", intensity: 0.5, enabled: true },
+      "shine-loud": { shadeHex: "#6B2230", finish: "matte", intensity: 0.85, enabled: true },
+      "ultimate-shadow": { shadeHex: "#4A2A1A", finish: "satin", intensity: 0.6, enabled: true, style: "smoky" },
+      "epic-ink": { shadeHex: "#14100E", finish: "matte", intensity: 0.85, enabled: true, style: "winged" },
+      "epic-lash": { shadeHex: "#0A0A0A", finish: "matte", intensity: 0.8, enabled: true },
     },
   },
   {
     id: "salty-siren", title: "Salty Siren",
     products: {
-      "shine-loud": { shadeHex: "#D85A47", finish: "glossy", intensity: 0.85, enabled: true },
-      "sweet-cheeks": { shadeHex: "#E0703F", finish: "shimmer", intensity: 0.6, enabled: true },
-      "sun-stick": { shadeHex: "#B5702E", finish: "shimmer", intensity: 0.6, enabled: true },
-      "ultimate-shadow": { shadeHex: "#B5722F", finish: "shimmer", intensity: 0.65, enabled: true, style: "halo" },
-      "jumbo-glow": { shadeHex: "#EFCB86", finish: "metallic", intensity: 0.6, enabled: true },
+      "shine-loud": { shadeHex: "#D85A47", finish: "glossy", intensity: 0.78, enabled: true },
+      "sweet-cheeks": { shadeHex: "#E0703F", finish: "dewy", intensity: 0.5, enabled: true },
+      "sun-stick": { shadeHex: "#B5702E", finish: "matte", intensity: 0.4, enabled: true },
+      "ultimate-shadow": { shadeHex: "#B5722F", finish: "shimmer", intensity: 0.5, enabled: true, style: "lid" },
+      "jumbo-glow": { shadeHex: "#EFCB86", finish: "shimmer", intensity: 0.35, enabled: true },
     },
   },
 ];
