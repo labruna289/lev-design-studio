@@ -87,7 +87,9 @@ attribute vec2 aPos; attribute float aEdge;
 varying vec2 vUv; varying float vEdge;
 void main(){
   vEdge = aEdge;
-  vUv = vec2(aPos.x * 0.5 + 0.5, 1.0 - (aPos.y * 0.5 + 0.5));
+  // sample the scene FBO with the SAME mapping the blit uses (no Y flip),
+  // so each fragment reads the real base pixel beneath it (correct luma).
+  vUv = vec2(aPos.x * 0.5 + 0.5, aPos.y * 0.5 + 0.5);
   gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
