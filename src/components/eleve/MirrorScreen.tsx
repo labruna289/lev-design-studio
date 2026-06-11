@@ -21,8 +21,12 @@ import {
   landmarksFromCrop,
   clampPt,
 } from "@/lib/mirror-logic";
-import { detectWithFaceMesh } from "@/lib/facemesh-tier";
+import { detectWithFaceMesh, polygonToClipPath } from "@/lib/facemesh-tier";
+import { installMediapipeCdnShim } from "@/lib/mediapipe-cdn-shim";
 import { supabase } from "@/integrations/supabase/client";
+
+type Polygon = Array<{ x: number; y: number }>;
+type Contours = { lipOuter: Polygon | null; faceOval: Polygon | null };
 
 type TintType = "lip" | "blush" | "eye";
 type Tint = { id: string; type: TintType; x: number; y: number; size?: number; shade: string };
@@ -106,11 +110,15 @@ export default function MirrorScreen() {
   const [tints, setTints] = useState<Tint[]>([]);
   const [tintsHistory, setTintsHistory] = useState<Tint[][]>([]);
   const [featureMap, setFeatureMap] = useState<FeatureMap | null>(null);
+  const [contours, setContours] = useState<Contours | null>(null);
   const [showFeatures, setShowFeatures] = useState(false);
   const [splitPct, setSplitPct] = useState(0); // 0 = no before; user drag to set
   const [holdBefore, setHoldBefore] = useState(false);
   const [working, setWorking] = useState(false);
   const stageRef = useRef<HTMLDivElement | null>(null);
+
+  // Install the MediaPipe wasm CDN shim once on mount.
+  useEffect(() => { installMediapipeCdnShim(); }, []);
 
   // Reset shades when look changes
   useEffect(() => {
@@ -131,6 +139,48 @@ export default function MirrorScreen() {
     return `radial-gradient(ellipse ${rx}% ${ry}% at ${cx}% ${cy}%, #000 55%, rgba(0,0,0,0.7) 75%, transparent 100%)`;
   }, [region]);
 
+  // SVG mask built from faceOval contour (preferred over radial gradient when
+  // FaceMesh provides a face-oval polygon). stdDeviation=6 in viewBox units
+  // (% of width) gives a soft, atelier-grade feather along the jawline.
+  const svgFaceMaskUrl = useMemo(() => {
+    const poly = contours?.faceOval;
+    if (!poly || poly.length < 3) return null;
+    const d = poly.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ") + " Z";
+    const svg =
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>` +
+      `<defs><filter id='b' x='-20%' y='-20%' width='140%' height='140%'>` +
+      `<feGaussianBlur stdDeviation='6'/></filter></defs>` +
+      `<path d='${d}' fill='white' filter='url(#b)'/></svg>`;
+    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+  }, [contours]);
+
+  // Final mask used by grade layers — contour mask wins when available.
+  const gradeMaskStyle = useMemo<React.CSSProperties>(() => {
+    if (svgFaceMaskUrl) {
+      return {
+        WebkitMaskImage: svgFaceMaskUrl,
+        maskImage: svgFaceMaskUrl,
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        WebkitMaskSize: "100% 100%",
+        maskSize: "100% 100%",
+      };
+    }
+    return {
+      WebkitMaskImage: maskImage,
+      maskImage: maskImage,
+      WebkitMaskRepeat: "no-repeat",
+      maskRepeat: "no-repeat",
+    };
+  }, [svgFaceMaskUrl, maskImage]);
+
+  // Lip contour clip-path (with 2px blur feather). Null when FaceMesh didn't
+  // supply a lipOuter polygon — caller falls back to the ellipse renderer.
+  const lipClipPath = useMemo(() => {
+    return contours?.lipOuter ? polygonToClipPath(contours.lipOuter) : null;
+  }, [contours]);
+
+
   const pushHistory = useCallback((next: Tint[]) => {
     setTintsHistory((h) => [...h.slice(-20), tints]);
     setTints(next);
@@ -144,11 +194,16 @@ export default function MirrorScreen() {
       const img = await loadImage(photo.dataUrl);
       // 1) FaceMesh
       let stageMap: FeatureMap | null = null;
+      let nextContours: Contours | null = null;
       try {
         const r = await detectWithFaceMesh(img as any, photo.aspect, {
           coverMap, validateFeatureMap, deriveFromFeatureMap,
         });
-        if (r) stageMap = r.stageMap as FeatureMap;
+        if (r) {
+          stageMap = r.stageMap as FeatureMap;
+          const c = (r.stageMap as any).contours as Contours | undefined;
+          if (c && (c.lipOuter || c.faceOval)) nextContours = c;
+        }
       } catch {}
       // 2) pixel analysis
       if (!stageMap) {
@@ -189,6 +244,7 @@ export default function MirrorScreen() {
       let placedByEye = false;
       if (!stageMap) { stageMap = heuristicFeatureMap(); placedByEye = true; }
       setFeatureMap(stageMap);
+      setContours(nextContours);
       const lm = deriveFromFeatureMap(stageMap as any);
       if (!lm) throw new Error("derive failed");
       (lm as any).stage = true;
@@ -235,6 +291,9 @@ export default function MirrorScreen() {
   // Drag feature dot
   function onFeaturePointerDown(e: React.PointerEvent, key: FeatureKey) {
     (e.target as Element).setPointerCapture(e.pointerId);
+    // User is hand-fitting features — the FaceMesh contours no longer match,
+    // so drop them and fall back to the ellipse mask + radial-gradient tints.
+    setContours(null);
     const stage = stageRef.current!;
     function move(ev: PointerEvent) {
       const rect = stage.getBoundingClientRect();
@@ -416,13 +475,7 @@ export default function MirrorScreen() {
             alt=""
             className="absolute inset-0 h-full w-full object-cover"
             draggable={false}
-            style={{
-              filter: look.filter,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
-            }}
+            style={{ filter: look.filter, ...gradeMaskStyle }}
           />
           {/* 3. bloom */}
           <img
@@ -434,10 +487,7 @@ export default function MirrorScreen() {
               filter: "blur(10px) brightness(1.2) saturate(1.05)",
               mixBlendMode: "screen",
               opacity: look.bloom * intensity,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
-              WebkitMaskRepeat: "no-repeat",
-              maskRepeat: "no-repeat",
+              ...gradeMaskStyle,
             }}
           />
           {/* 4. wash */}
@@ -446,20 +496,38 @@ export default function MirrorScreen() {
             style={{
               background: look.wash,
               mixBlendMode: look.washBlend,
-              WebkitMaskImage: maskImage,
-              maskImage: maskImage,
+              ...gradeMaskStyle,
             }}
           />
-          {/* 5. tints */}
-          {tints.map((t) => (
-            <div key={t.id + "-c"} className="absolute inset-0 pointer-events-none"
-              style={{ mixBlendMode: "color", backgroundImage: tintBg(t, intensity)(STRENGTHS[t.type].color * intensity) }} />
-          ))}
-          {tints.map((t) => (
-            <div key={t.id + "-m"} className="absolute inset-0 pointer-events-none"
-              style={{ mixBlendMode: "multiply", backgroundImage: tintBg(t, intensity)(STRENGTHS[t.type].multiply * intensity) }} />
-          ))}
+          {/* 5. tints — lips use the FaceMesh lipOuter polygon when present
+              (clip-path + 2px blur feather), everything else uses the radial
+              ellipse renderer. */}
+          {tints.map((t) => {
+            const useLipClip = t.type === "lip" && lipClipPath;
+            const colorA = STRENGTHS[t.type].color * intensity;
+            const multA = STRENGTHS[t.type].multiply * intensity;
+            if (useLipClip) {
+              return (
+                <div key={t.id + "-lip"} className="absolute inset-0 pointer-events-none"
+                  style={{ clipPath: lipClipPath!, WebkitClipPath: lipClipPath! as any, filter: "blur(2px)" }}>
+                  <div className="absolute inset-0"
+                    style={{ background: hexA(t.shade, colorA), mixBlendMode: "color" }} />
+                  <div className="absolute inset-0"
+                    style={{ background: hexA(t.shade, multA), mixBlendMode: "multiply" }} />
+                </div>
+              );
+            }
+            return (
+              <div key={t.id + "-wrap"}>
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{ mixBlendMode: "color", backgroundImage: tintBg(t, intensity)(colorA) }} />
+                <div className="absolute inset-0 pointer-events-none"
+                  style={{ mixBlendMode: "multiply", backgroundImage: tintBg(t, intensity)(multA) }} />
+              </div>
+            );
+          })}
         </div>
+
 
         {/* Tint drag handles (small invisible discs you can grab) */}
         {tints.map((t) => (
