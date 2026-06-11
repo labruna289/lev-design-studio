@@ -742,3 +742,82 @@ function downscaleToImageData(img: HTMLImageElement, targetW: number) {
 }
 function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 function clamp(v: number, lo: number, hi: number) { return Math.min(hi, Math.max(lo, v)); }
+
+/* Build a base64 JPEG of `img` (optionally cropped to box in image-%), with a
+   thin 10% grid + axis labels overlaid to help the vision model report
+   coordinates in percent. Returns the raw base64 string (no data URL prefix). */
+function griddedImageBase64(img: HTMLImageElement, box?: { x: number; y: number; w: number; h: number }, maxW = 768): string | null {
+  const sx = box ? (box.x / 100) * img.width : 0;
+  const sy = box ? (box.y / 100) * img.height : 0;
+  const sw = box ? (box.w / 100) * img.width : img.width;
+  const sh = box ? (box.h / 100) * img.height : img.height;
+  const scale = Math.min(1, maxW / sw);
+  const w = Math.round(sw * scale);
+  const h = Math.round(sh * scale);
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+  ctx.strokeStyle = "rgba(255,215,140,0.55)";
+  ctx.lineWidth = 1;
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = "rgba(255,215,140,0.9)";
+  for (let p = 10; p < 100; p += 10) {
+    const x = (p / 100) * w, y = (p / 100) * h;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    ctx.fillText(String(p), x + 2, 11);
+    ctx.fillText(String(p), 2, y - 2);
+  }
+  const url = c.toDataURL("image/jpeg", 0.82);
+  return url.split(",")[1] ?? null;
+}
+
+const LANDMARK_PROMPT =
+  "You are a precise facial landmark locator. The image has a 10% grid overlay; both axes are labelled 10-90 (percent of the image). Return ONLY compact JSON of the form " +
+  '{"face_found":true,"lips":{"x":NN,"y":NN,"width_pct":NN},"eyelid_left":{"x":NN,"y":NN},"eyelid_right":{"x":NN,"y":NN},"cheek_left":{"x":NN,"y":NN},"cheek_right":{"x":NN,"y":NN}} ' +
+  "where every value is a number in percent of the image (0-100). left/right are from the viewer's perspective. " +
+  'If no face is visible, return {"face_found":false}. No prose, no markdown.';
+
+async function callAnalyzeLook(imageBase64: string, prompt: string): Promise<any | null> {
+  const { data, error } = await supabase.functions.invoke("analyze-look", {
+    body: { imageBase64, prompt },
+  });
+  if (error) return null;
+  if (data == null) return null;
+  if (typeof data === "string") return extractLandmarksJSON(data);
+  // Edge fn may return JSON directly or wrap raw text under common keys
+  const text = (data as any).text ?? (data as any).output ?? (data as any).content;
+  if (typeof text === "string") return extractLandmarksJSON(text);
+  return data;
+}
+
+/* Two-pass landmark detection via the analyze-look edge function. */
+async function detectLandmarksViaEdge(img: HTMLImageElement): Promise<any | null> {
+  // Pass 1: full image
+  const b1 = griddedImageBase64(img);
+  if (!b1) return null;
+  const lm1 = await callAnalyzeLook(b1, LANDMARK_PROMPT);
+  if (!lm1 || !validateLandmarks(lm1)) return null;
+
+  // Build a bounding box around the detected face in image-% space.
+  const lips = clampPt(lm1.lips);
+  const eL = clampPt(lm1.eyelid_left);
+  const eR = clampPt(lm1.eyelid_right);
+  if (!lips || !eL || !eR) return lm1;
+  const xs = [lips.x, eL.x, eR.x], ys = [lips.y, eL.y, eR.y];
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const box0 = { x: minX, y: minY, w: Math.max(4, maxX - minX), h: Math.max(4, maxY - minY) };
+  const box = expandBox(box0, 0.45);
+  if (!box) return lm1;
+
+  // Pass 2: refine on the cropped region
+  const b2 = griddedImageBase64(img, box);
+  if (!b2) return lm1;
+  const lm2 = await callAnalyzeLook(b2, LANDMARK_PROMPT);
+  if (!lm2 || !validateLandmarks(lm2)) return lm1;
+  const mapped = landmarksFromCrop(lm2, box);
+  return mapped && validateLandmarks(mapped) ? mapped : lm1;
+}
