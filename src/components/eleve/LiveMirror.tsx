@@ -35,9 +35,9 @@ export default function LiveMirror(_props: LiveMirrorProps) {
   const [error, setError] = useState<string | null>(null);
   const [startKey, setStartKey] = useState(0);
 
-  const [active, setActive] = useState<Record<string, LiveProductState>>(() =>
-    JSON.parse(JSON.stringify(DEFAULT_LIVE_LOOK)),
-  );
+  const [active, setActive] = useState<Record<string, LiveProductState>>(() => ({
+    "shine-loud": { shadeHex: "#C2502E", finish: "satin", intensity: 0.85, enabled: true },
+  }));
   const [cat, setCat] = useState<Category>("lips");
   const [productId, setProductId] = useState("shine-loud");
   const [beforeAfter, setBeforeAfter] = useState(false);
@@ -187,62 +187,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
         )}
       </div>
 
-      {/* CURATED LOOKS */}
-      <div className="mt-4 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-        {LIVE_LOOKS.map((l) => (
-          <button key={l.id} onClick={() => applyLook(l)}
-            className="press shrink-0 serif-display italic text-[13px]"
-            style={{ padding: "8px 16px", borderRadius: 999, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--ink)" }}>
-            {l.title}
-          </button>
-        ))}
-      </div>
-
-      {/* CATEGORY TABS */}
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {(Object.keys(CAT_LABELS) as Category[]).map((c) => {
-          const activeTab = c === cat;
-          return (
-            <button key={c} onClick={() => { setCat(c); setProductId(CATALOG[c][0].id); }}
-              className="press text-[12px]"
-              style={{
-                padding: "10px 0", borderRadius: 12, letterSpacing: "0.16em", textTransform: "uppercase",
-                background: activeTab ? "var(--ink)" : "var(--surface)",
-                color: activeTab ? "var(--surface)" : "var(--muted-ink)",
-                border: `1px solid ${activeTab ? "var(--ink)" : "var(--border)"}`,
-              }}>
-              {CAT_LABELS[c]}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* PRODUCT LIST */}
-      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-        {CATALOG[cat].map((p) => {
-          const sel = p.id === productId;
-          const on = active[p.id]?.enabled;
-          return (
-            <button key={p.id} onClick={() => setProductId(p.id)}
-              className="press shrink-0 inline-flex items-center gap-2 text-[12px]"
-              style={{
-                padding: "8px 14px", borderRadius: 999,
-                background: sel ? "var(--espresso)" : "var(--surface)",
-                color: sel ? "var(--surface)" : "var(--ink)",
-                border: `1px solid ${on ? "var(--champagne)" : "var(--border)"}`,
-              }}>
-              <span style={{
-                width: 7, height: 7, borderRadius: 999,
-                background: on ? "var(--champagne)" : "transparent",
-                boxShadow: on ? "none" : "inset 0 0 0 1px var(--border)",
-              }} />
-              {p.name}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* PRODUCT CONTROLS */}
+      {/* PRODUCT CONTROLS (lipstick only) */}
       <div className="card-atelier mt-3 p-4">
         <div className="flex items-center justify-between">
           <div className="serif-display italic text-[15px] text-espresso">{product.name}</div>
@@ -275,24 +220,6 @@ export default function LiveMirror(_props: LiveMirrorProps) {
         <div className="mt-2 serif-display italic text-[13px] text-espresso">
           {product.shades.find((s) => s.hex.toLowerCase() === state.shadeHex.toLowerCase())?.name ?? "—"}
         </div>
-
-        {/* finishes */}
-        {product.finishes.length > 1 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {product.finishes.map((f) => (
-              <button key={f} onClick={() => pickFinish(f)}
-                className="press text-[10.5px] tracking-[0.14em] uppercase"
-                style={{
-                  padding: "6px 11px", borderRadius: 999,
-                  background: state.finish === f ? "var(--ink)" : "transparent",
-                  color: state.finish === f ? "var(--surface)" : "var(--muted-ink)",
-                  border: `1px solid ${state.finish === f ? "var(--ink)" : "var(--border)"}`,
-                }}>
-                {f}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* styles */}
         {product.styles && (
@@ -330,7 +257,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
       </div>
 
       <p className="mt-4 text-center text-[11.5px] text-muted-foreground leading-relaxed italic">
-        {enabledCount} product{enabledCount === 1 ? "" : "s"} on · everything runs on your device. Nothing is stored or uploaded.
+        Lipstick try-on · everything runs on your device. Nothing is stored or uploaded.
       </p>
     </div>
   );
