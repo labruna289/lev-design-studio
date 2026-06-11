@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CameraOff, Download, Power } from "lucide-react";
 import { hexToRgb } from "@/lib/makeup-canvas";
-import { startLipstick, setLipColor, setLipOpacity, destroyWebARRocks } from "@/lib/webarrocks-tier";
+import { startMakeup, setShapeColor, setShapeOpacity, destroyWebARRocks } from "@/lib/webarrocks-tier";
 import {
   CATALOG, PRODUCTS_BY_ID, DEFAULT_LIVE_LOOK, LIVE_LOOKS,
   type Category, type Finish, type LiveProductState, type MakeupProduct,
@@ -50,7 +50,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     for (const id of LIP_PRIORITY) { const s = active[id]; if (s?.enabled) return { ...s, id }; }
     return null;
   }, [active]);
-  const lipsVisible = !!lipDriver && !beforeAfter;
+  const showAR = !beforeAfter;
 
   /* ---- helpers to mutate the per-product state ---- */
   function patch(id: string, p: Partial<LiveProductState>) {
@@ -89,7 +89,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     (async () => {
       setLoading(true); setError(null);
       try {
-        await startLipstick({ canvasVideo: canvasVideoRef.current, canvasAR: canvasARRef.current });
+        await startMakeup({ canvasVideo: canvasVideoRef.current, canvasAR: canvasARRef.current });
         if (cancelled) { await destroyWebARRocks(); return; }
         setCameraReady(true); setLoading(false);
       } catch (e: any) {
@@ -108,12 +108,22 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     };
   }, [startKey]);
 
-  /* ---- push the live lip shade + intensity into the engine ---- */
+  /* ---- push live shades + per-product intensity into the engine
+     (lips, eyeshadow, blush). Opacity 0 = product off. ---- */
   useEffect(() => {
-    if (!cameraReady || !lipDriver) return;
-    setLipColor(hexToRgb(lipDriver.shadeHex));
-    setLipOpacity(lipDriver.intensity);
-  }, [cameraReady, lipDriver?.shadeHex, lipDriver?.intensity, lipDriver?.id]);
+    if (!cameraReady) return;
+    // Lips (priority lipstick > gloss > liner)
+    if (lipDriver) setShapeColor("LIPS", "lipstickColor", hexToRgb(lipDriver.shadeHex));
+    setShapeOpacity("LIPS", lipDriver ? lipDriver.intensity : 0);
+    // Eyeshadow
+    const eye = active["ultimate-shadow"];
+    if (eye?.enabled) setShapeColor("EYES", "uEyeColor", hexToRgb(eye.shadeHex));
+    setShapeOpacity("EYES", eye?.enabled ? eye.intensity : 0);
+    // Blush
+    const blush = active["sweet-cheeks"];
+    if (blush?.enabled) setShapeColor("CHEEKS", "uBlushColor", hexToRgb(blush.shadeHex));
+    setShapeOpacity("CHEEKS", blush?.enabled ? blush.intensity : 0);
+  }, [cameraReady, active]);
 
   function captureScreenshot() {
     const v = canvasVideoRef.current, ar = canvasARRef.current;
@@ -124,7 +134,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
     // un-mirror to match the on-screen (CSS-mirrored) view
     c.save(); c.translate(tmp.width, 0); c.scale(-1, 1);
     c.drawImage(v, 0, 0);
-    if (ar && lipsVisible) c.drawImage(ar, 0, 0);
+    if (ar && showAR) c.drawImage(ar, 0, 0);
     c.restore();
     const url = tmp.toDataURL("image/jpeg", 0.92);
     const a = document.createElement("a"); a.href = url; a.download = "eleve-live-look.jpg"; a.click();
@@ -144,7 +154,7 @@ export default function LiveMirror(_props: LiveMirrorProps) {
           className="absolute inset-0 h-full w-full object-cover" style={{ transform: "scaleX(-1)", zIndex: 0 }} />
         <canvas id="WebARRocksFaceCanvasAR" ref={canvasARRef}
           className="absolute inset-0 h-full w-full"
-          style={{ transform: "scaleX(-1)", zIndex: 1, pointerEvents: "none", opacity: lipsVisible ? 1 : 0, transition: "opacity 150ms" }} />
+          style={{ transform: "scaleX(-1)", zIndex: 1, pointerEvents: "none", opacity: showAR ? 1 : 0, transition: "opacity 150ms" }} />
 
         {/* before/after */}
         {cameraReady && !loading && !error && (

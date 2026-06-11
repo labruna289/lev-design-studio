@@ -76,6 +76,91 @@ export const SHAPELIPS = {
   ],
 };
 
+/* ---- EYES shape (from demos/makeupShapes/main.js; color promoted to a
+   uniform + luminance-preserving like the lips) ---- */
+export const SHAPEEYES = {
+  name: "EYES",
+  points: [
+    "eyeRightInt0", "eyeRightTop0", "eyeRightTop1", "eyeRightExt0",
+    "eyeRightOut0", "eyeRightOut1", "eyeRightOut2", "eyeRightOut3",
+    "eyeLeftInt0", "eyeLeftTop0", "eyeLeftTop1", "eyeLeftExt0",
+    "eyeLeftOut0", "eyeLeftOut1", "eyeLeftOut2", "eyeLeftOut3",
+  ],
+  iVals: [
+    [1], [1], [1], [1], [1], [-1], [-1], [-1],
+    [1], [1], [1], [1], [1], [-1], [-1], [-1],
+  ],
+  tesselation: [
+    0, 6, 7, 0, 1, 6, 1, 5, 6, 2, 5, 1, 2, 4, 5, 3, 4, 2,
+    8, 15, 14, 9, 8, 14, 14, 13, 9, 9, 13, 10, 10, 13, 12, 11, 10, 12,
+  ],
+  interpolations: [
+    { tangentInfluences: [2, 2, 2], points: [0, 1, 2], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [0, 1, 2], ks: [0.5, -0.5] },
+    { tangentInfluences: [2, 2, 2], points: [3, 4, 5], ks: [0.5, -0.5] },
+    { tangentInfluences: [2, 2, 2], points: [4, 5, 6], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [5, 6, 7], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [6, 7, 0], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [8, 9, 10], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [8, 9, 10], ks: [0.5, -0.5] },
+    { tangentInfluences: [2, 2, 2], points: [11, 12, 13], ks: [0.5, -0.5] },
+    { tangentInfluences: [2, 2, 2], points: [12, 13, 14], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [13, 14, 15], ks: [-0.5, 0.5] },
+    { tangentInfluences: [2, 2, 2], points: [14, 15, 8], ks: [-0.5, 0.5] },
+  ],
+  outlines: [
+    { points: [0, 1, 2, 3, 4, 5, 6, 7], displacements: [-0.07, -0.03, -0.01, -0.05, 0, 0, 0, 0] },
+    { points: [8, 9, 10, 11, 12, 13, 14, 15], displacements: [-0.07, -0.03, -0.01, -0.05, 0, 0, 0, 0] },
+  ],
+  GLSLFragmentSource: "\n\
+    const vec3 LUMA = 1.3 * vec3(0.299, 0.587, 0.114);\n\
+    void main(void){\n\
+      vec3 videoColor = texture2D(samplerVideo, vUV).rgb;\n\
+      vec3 gs = vec3(dot(videoColor, LUMA));\n\
+      float alpha = 0.6 * pow(0.5 + iVal * 0.5, 0.6);\n\
+      vec3 color = gs * uEyeColor;\n\
+      gl_FragColor = vec4(color * alpha, alpha * uOpacity);\n\
+    }",
+  uniforms: [
+    { name: "uEyeColor", value: [0.69, 0.56, 0.4] },
+    { name: "uOpacity", value: [1.0] },
+  ],
+};
+
+/* ---- CHEEKS (blush) shape; color → uniform, luminance-preserving ---- */
+export const SHAPECHEEKS = {
+  name: "CHEEKS",
+  points: [
+    "cheekRightExt0", "cheekRightExt1", "cheekRightExt2", "cheekRightExt3",
+    "cheekRightExt4", "cheekRightExt5", "cheekRightInt0",
+    "cheekLeftExt0", "cheekLeftExt1", "cheekLeftExt2", "cheekLeftExt3",
+    "cheekLeftExt4", "cheekLeftExt5", "cheekLeftInt0",
+  ],
+  iVals: [
+    [-1], [-1], [-1], [-1], [-1], [-1], [1],
+    [-1], [-1], [-1], [-1], [-1], [-1], [1],
+  ],
+  tesselation: [
+    0, 1, 6, 1, 2, 6, 2, 3, 6, 3, 4, 6, 4, 5, 6, 5, 0, 6,
+    7, 8, 13, 8, 9, 13, 9, 10, 13, 10, 11, 13, 11, 12, 13, 12, 7, 13,
+  ],
+  interpolations: [],
+  outlines: [],
+  GLSLFragmentSource: "\n\
+    const vec3 LUMA = 1.3 * vec3(0.299, 0.587, 0.114);\n\
+    void main(void){\n\
+      vec3 videoColor = texture2D(samplerVideo, vUV).rgb;\n\
+      vec3 gs = vec3(dot(videoColor, LUMA));\n\
+      float alpha = 0.5 * pow(0.5 + iVal * 0.5, 0.4);\n\
+      vec3 color = gs * uBlushColor;\n\
+      gl_FragColor = vec4(color * alpha, alpha * uOpacity);\n\
+    }",
+  uniforms: [
+    { name: "uBlushColor", value: [0.9, 0.55, 0.45] },
+    { name: "uOpacity", value: [1.0] },
+  ],
+};
+
 /* ---- classic-script loader (sequential → preserves order) ---- */
 let _loadingPromise: Promise<any> | null = null;
 function loadScript(src: string) {
@@ -104,8 +189,8 @@ export async function loadWebARRocks() {
   return _loadingPromise;
 }
 
-/* ---- start the lipstick try-on on the two stacked canvases ---- */
-export async function startLipstick({ canvasVideo, canvasAR }) {
+/* ---- start the makeup try-on (lips + eyes + cheeks) on the two canvases ---- */
+export async function startMakeup({ canvasVideo, canvasAR }) {
   const { Resizer, Shape2D } = await loadWebARRocks();
   await new Promise<void>((resolve, reject) => {
     Resizer.size_canvas({
@@ -114,10 +199,10 @@ export async function startLipstick({ canvasVideo, canvasAR }) {
       overlayCanvas: [canvasAR],
       callback: () => {
         Shape2D.init({
-          NNCPath: `${BASE}/neuralNets/NN_LIPS_8.json`,
+          NNCPath: `${BASE}/neuralNets/NN_MAKEUP_2.json`,
           canvasVideo,
           canvasAR,
-          shapes: [SHAPELIPS],
+          shapes: [SHAPELIPS, SHAPEEYES, SHAPECHEEKS],
         }).then(() => resolve()).catch((e: any) => reject(e instanceof Error ? e : new Error(String(e))));
       },
     });
@@ -126,15 +211,14 @@ export async function startLipstick({ canvasVideo, canvasAR }) {
 }
 
 /* ---- runtime controls ---- */
-export function setLipColor(rgb255: number[]) {
-  const Shape2D = (window as any).WebARRocksFaceShape2DHelper;
-  if (!Shape2D) return;
-  Shape2D.set_uniformValue("LIPS", "lipstickColor", [rgb255[0] / 255, rgb255[1] / 255, rgb255[2] / 255]);
+function helper() { return (window as any).WebARRocksFaceShape2DHelper; }
+export function setShapeColor(shape: string, uniform: string, rgb255: number[]) {
+  const h = helper(); if (!h) return;
+  h.set_uniformValue(shape, uniform, [rgb255[0] / 255, rgb255[1] / 255, rgb255[2] / 255]);
 }
-export function setLipOpacity(o: number) {
-  const Shape2D = (window as any).WebARRocksFaceShape2DHelper;
-  if (!Shape2D) return;
-  Shape2D.set_uniformValue("LIPS", "uOpacity", [o]);
+export function setShapeOpacity(shape: string, o: number) {
+  const h = helper(); if (!h) return;
+  h.set_uniformValue(shape, "uOpacity", [o]);
 }
 
 export async function destroyWebARRocks() {
