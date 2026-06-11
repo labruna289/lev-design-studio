@@ -291,6 +291,9 @@ export default function MirrorScreen() {
   // Drag feature dot
   function onFeaturePointerDown(e: React.PointerEvent, key: FeatureKey) {
     (e.target as Element).setPointerCapture(e.pointerId);
+    // User is hand-fitting features — the FaceMesh contours no longer match,
+    // so drop them and fall back to the ellipse mask + radial-gradient tints.
+    setContours(null);
     const stage = stageRef.current!;
     function move(ev: PointerEvent) {
       const rect = stage.getBoundingClientRect();
