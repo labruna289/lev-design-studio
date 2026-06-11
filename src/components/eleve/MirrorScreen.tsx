@@ -21,8 +21,12 @@ import {
   landmarksFromCrop,
   clampPt,
 } from "@/lib/mirror-logic";
-import { detectWithFaceMesh } from "@/lib/facemesh-tier";
+import { detectWithFaceMesh, polygonToClipPath } from "@/lib/facemesh-tier";
+import { installMediapipeCdnShim } from "@/lib/mediapipe-cdn-shim";
 import { supabase } from "@/integrations/supabase/client";
+
+type Polygon = Array<{ x: number; y: number }>;
+type Contours = { lipOuter: Polygon | null; faceOval: Polygon | null };
 
 type TintType = "lip" | "blush" | "eye";
 type Tint = { id: string; type: TintType; x: number; y: number; size?: number; shade: string };
