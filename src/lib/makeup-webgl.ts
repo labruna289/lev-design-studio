@@ -102,13 +102,7 @@ uniform float uTime; uniform vec2 uRes;
 uniform float uMatte, uSatin, uGloss, uShimmer, uMetallic, uSheer;
 uniform vec3 uFlake;
 
-const mat3 RGB2YCC = mat3(0.299,-0.168736,0.5, 0.587,-0.331264,-0.418688, 0.114,0.5,-0.081312);
-const mat3 YCC2RGB = mat3(1.0,1.0,1.0, 0.0,-0.344136,1.772, 1.402,-0.714136,0.0);
-vec3 rgb2ycc(vec3 c){ vec3 y = RGB2YCC*c; y.yz += 0.5; return y; }
-vec3 ycc2rgb(vec3 y){ y.yz -= 0.5; return clamp(YCC2RGB*y, 0.0, 1.0); }
 float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
-float slCh(float b, float s){ float d = (b<=0.25)?((16.0*b-12.0)*b+4.0)*b:sqrt(b); return (s<=0.5)?b-(1.0-2.0*s)*b*(1.0-b):b+(2.0*s-1.0)*(d-b); }
-vec3 softLight(vec3 b, vec3 s){ return vec3(slCh(b.r,s.r), slCh(b.g,s.g), slCh(b.b,s.b)); }
 float hash21(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
 
 void main(){
@@ -116,32 +110,31 @@ void main(){
   float cover = smoothstep(0.0, max(uFeather,1e-3), vEdge) * uOpacity;
   if (cover <= 0.0){ gl_FragColor = vec4(0.0); return; }
 
-  vec3 bY = rgb2ycc(base);
-  vec3 mY = rgb2ycc(uColor);
-  float Y = bY.x, Cb = mY.y, Cr = mY.z;
+  // RELIGHT the makeup shade by the face's shading: keep the shade's exact hue
+  // AND darkness, modulated by how bright/dark the underlying skin pixel is.
+  // (Scaling uColor by a scalar preserves hue/saturation exactly; the ratio
+  //  carries pores, lip lines, lid shading — luminance-preserving recolor.)
+  float Yb  = luma(base);
+  float Ymk = max(luma(uColor), 0.08);
+  float ratio = clamp(Yb / Ymk, 0.0, 1.45);
+  vec3 col = uColor * ratio;
 
-  float peak = smoothstep(0.62, 0.95, Y);
-  float flatten = clamp(uMatte*0.85 + uSatin*0.30, 0.0, 1.0);
-  float Ym = mix(Y, 0.5, flatten);
-  Ym = mix(Ym, min(Ym, 0.72), uMatte*peak);
-  Y = mix(Y, Ym, step(0.0001, flatten));
+  float peak = smoothstep(0.6, 0.95, Yb);
+  // matte: knock back specular highlights for a powdery finish
+  col = mix(col, col * 0.82, clamp(uMatte + uSatin*0.35, 0.0, 1.0) * peak);
+  // gloss: add a sharpened specular lobe from base luma peaks
+  col += mix(vec3(1.0), uColor, 0.25) * (pow(peak, 3.0) * uGloss);
 
-  vec3 col = ycc2rgb(vec3(Y, Cb, Cr));
-  float gloss = pow(peak, 3.0) * uGloss;
-  col += mix(vec3(1.0), uColor, 0.25) * gloss;
-
+  // shimmer / metallic sparkle gated to lit areas
   vec2 sp = floor(vUv * uRes / 3.0);
   float spark = pow(hash21(sp + floor(uTime*12.0)), 6.0);
   float fres = pow(1.0 - clamp(peak,0.0,1.0), 3.0) * uMetallic;
-  float shim = uShimmer * (spark*(0.4+0.6*peak) + 0.25*fres);
-  col += mix(uFlake, vec3(1.0), spark) * shim;
-  col = clamp(col, 0.0, 1.0);
+  col += mix(uFlake, vec3(1.0), spark) * (uShimmer * (spark*(0.4+0.6*peak) + 0.25*fres));
 
-  if (uSheer > 0.0){
-    float Yb = luma(base);
-    vec3 hybrid = clamp(mix(base*uColor, softLight(base,uColor), Yb), 0.0, 1.0);
-    col = mix(col, hybrid, uSheer);
-  }
+  // sheer: lighten toward a translucent tint
+  col = mix(col, clamp(base*uColor*1.7, 0.0, 1.0), uSheer * 0.5);
+
+  col = clamp(col, 0.0, 1.0);
   gl_FragColor = vec4(col * cover, cover);
 }`;
 
