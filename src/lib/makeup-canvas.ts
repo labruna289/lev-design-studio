@@ -222,16 +222,32 @@ export function createMakeupRenderer() {
     c.fillStyle = g; c.beginPath(); c.arc(x, y, r, 0, Math.PI * 2); c.fill();
   }
 
+  // Clip an already-painted layer ctx to the feathered face oval so face
+  // products (bronzer/contour) never spill onto the background.
+  function clipToFace(o, P, fw, W, H) {
+    const oval = FACE_OVAL.map(i => P[i]); if (oval.some(p => !p)) return;
+    const m = layer("faceClip", W, H);
+    m.ctx.filter = `blur(${fw * 0.015}px)`; m.ctx.fillStyle = "#fff";
+    const fp = new Path2D(); traceSmooth(fp, oval); m.ctx.fill(fp); m.ctx.filter = "none";
+    o.globalCompositeOperation = "destination-in"; o.drawImage(m.canvas, 0, 0);
+    o.globalCompositeOperation = "source-over";
+  }
+
   function paintBronzer(ctx, P, fw, rgb, finish, intensity) {
-    const anchors = [P[10], P[338], P[109], P[127], P[356], P[50], P[280], P[172], P[397]].filter(Boolean);
-    const L = layer("bronzer", ctxW(ctx), ctxH(ctx));
+    const W = ctxW(ctx), H = ctxH(ctx);
+    const fc = P[1] ? { x: P[1].x, y: P[1].y } : null; // face centre ~ nose tip
+    const raw = [P[10], P[338], P[109], P[127], P[356], P[50], P[280], P[172], P[397]].filter(Boolean);
+    // pull each anchor ~22% toward the face centre so blobs sit inside the silhouette
+    const anchors = fc ? raw.map(a => ({ x: a.x + (fc.x - a.x) * 0.22, y: a.y + (fc.y - a.y) * 0.22 })) : raw;
+    const L = layer("bronzer", W, H);
     const o = L.ctx;
     o.filter = `blur(${fw * 0.02}px)`;
-    for (const a of anchors) softBlob(o, a.x, a.y, fw * 0.13, rgb, 1);
+    for (const a of anchors) softBlob(o, a.x, a.y, fw * 0.12, rgb, 1);
     o.filter = "none";
-    if (finish === "shimmer") addSpeckle(o, { w: ctxW(ctx), h: ctxH(ctx) }, 0.1 * intensity);
+    if (finish === "shimmer") addSpeckle(o, { w: W, h: H }, 0.1 * intensity);
+    clipToFace(o, P, fw, W, H);
     ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = clamp(0.28 * intensity, 0, 0.4);
+    ctx.globalAlpha = clamp(0.26 * intensity, 0, 0.38);
     ctx.drawImage(L.canvas, 0, 0);
     reset(ctx);
   }
@@ -241,18 +257,16 @@ export function createMakeupRenderer() {
     const L = layer("contour", W, H); const o = L.ctx;
     o.filter = `blur(${fw * 0.022}px)`;
     o.fillStyle = rgba(rgb, 1);
+    // cheek hollows only — nose-side contour was depositing in the tear-trough
+    // (looked like a bruise), so it's omitted for a clean soft cheek shadow.
     for (const hollow of [CHEEK_HOLLOW_R, CHEEK_HOLLOW_L]) {
       const pts = hollow.map(i => P[i]); if (pts.some(p => !p)) continue;
       const p = new Path2D(); traceSmooth(p, pts); o.fill(p);
     }
-    for (const side of [NOSE_SIDE_R, NOSE_SIDE_L]) {
-      const pts = side.map(i => P[i]); if (pts.some(p => !p)) continue;
-      o.save(); o.lineWidth = fw * 0.02; o.lineCap = "round"; o.strokeStyle = rgba(rgb, 0.8);
-      const p = new Path2D(); tracePolyline(p, pts); o.stroke(p); o.restore();
-    }
     o.filter = "none";
+    clipToFace(o, P, fw, W, H);
     ctx.globalCompositeOperation = "multiply";
-    ctx.globalAlpha = clamp(0.22 * intensity, 0, 0.32);
+    ctx.globalAlpha = clamp(0.2 * intensity, 0, 0.3);
     ctx.drawImage(L.canvas, 0, 0);
     reset(ctx);
   }
@@ -292,17 +306,20 @@ export function createMakeupRenderer() {
       // hair strokes
       o.save(); o.beginPath(); traceSmooth(o, pts.map(q => ({ x: q.x, y: q.y })), bb.x, bb.y); o.clip();
       o.lineCap = "round"; o.lineWidth = Math.max(0.6, fw * 0.004);
-      const c0 = centroid(pts);
-      for (let i = 0; i < 110; i++) {
+      // growth direction = inner head → outer tail (per-brow, so it stays
+      // mirror-symmetric); hairs lie along it with a slight upward jitter.
+      let tail = pts[0], maxd = 0;
+      for (const q of pts) { const d = dist(pts[0], q); if (d > maxd) { maxd = d; tail = q; } }
+      const gdir = Math.atan2(tail.y - pts[0].y, tail.x - pts[0].x);
+      for (let i = 0; i < 120; i++) {
         const j = Math.floor(Math.random() * (pts.length - 1));
         const a = pts[j], b = pts[(j + 1) % pts.length];
         const t = Math.random();
         const sx = a.x + (b.x - a.x) * t - bb.x, sy = a.y + (b.y - a.y) * t - bb.y;
-        const u = (a.x + (b.x - a.x) * t - c0.x); // x relative to centre → growth dir
-        const ang = (-u / (fw * 0.5)) * 0.5 - 0.15; // front up, tail down
-        const len = fw * 0.02 * (0.7 + Math.random() * 0.6);
-        o.strokeStyle = rgba(rgb, 0.18 + Math.random() * 0.18);
-        o.beginPath(); o.moveTo(sx, sy); o.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len * 0.6 - len * 0.5); o.stroke();
+        const ang = gdir + (Math.random() - 0.5) * 0.5 - 0.12;
+        const len = fw * 0.017 * (0.7 + Math.random() * 0.6);
+        o.strokeStyle = rgba(rgb, 0.16 + Math.random() * 0.16);
+        o.beginPath(); o.moveTo(sx, sy); o.lineTo(sx + Math.cos(ang) * len, sy + Math.sin(ang) * len); o.stroke();
       }
       o.restore();
       ctx.globalCompositeOperation = "multiply";
@@ -394,16 +411,23 @@ export function createMakeupRenderer() {
 
       if (finish === "shimmer" || finish === "metallic") addSpeckle(o, bb, finish === "metallic" ? 0.2 : 0.12);
 
-      // composite union: multiply + soft-light
-      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = 0.42 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
-      ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.32 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      // composite: one luminance-preserving multiply pass; add a gentle
+      // soft-light sheen only for light finishes (avoids compounding into a
+      // flat black socket).
+      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = 0.4 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      if (finish === "satin" || finish === "shimmer") {
+        ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.18 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      }
       reset(ctx);
 
-      // INNER-CORNER highlight
+      // INNER-CORNER highlight — nudge off the wet inner corner toward the
+      // nose bridge so it sits on skin, not the eyeball.
       if (zones.includes("inner")) {
-        const inner = P[innerI];
-        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.28 * intensity;
-        softBlob(ctx, inner.x, inner.y, fw * 0.028, [255, 245, 230], 0.5);
+        const inner = P[innerI], bridge = P[6];
+        const hx = bridge ? inner.x + (bridge.x - inner.x) * 0.35 : inner.x;
+        const hy = (bridge ? inner.y + (bridge.y - inner.y) * 0.2 : inner.y) + fw * 0.015;
+        ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = 0.24 * intensity;
+        softBlob(ctx, hx, hy, fw * 0.016, [255, 245, 230], 0.4);
         reset(ctx);
       }
     }
@@ -414,39 +438,43 @@ export function createMakeupRenderer() {
     for (const [lashIdx, outerI] of [[UPPER_LASH_R, OUTER_EYE_R], [UPPER_LASH_L, OUTER_EYE_L]]) {
       const lash = lashIdx.map(i => P[i]); if (lash.some(p => !p)) continue;
       const n = lash.length;
+      const eyeC = centroid(lash);
       const eyeW = dist(lash[0], lash[n - 1]);
       let wMax = fw * 0.032;
       if (style === "thin" || style === "tightline") wMax *= 0.6;
-      if (style === "graphic") wMax *= 1.5;
+      if (style === "graphic") wMax = Math.min(fw * 0.04, wMax * 1.4);
       const top = [], bot = [];
       for (let i = 0; i < n; i++) {
         const prev = lash[Math.max(0, i - 1)], next = lash[Math.min(n - 1, i + 1)];
         const tx = next.x - prev.x, ty = next.y - prev.y; const len = Math.hypot(tx, ty) || 1;
-        const nx = -ty / len, ny = tx / len;
+        let nx = -ty / len, ny = tx / len;
+        // normal must point AWAY from the eye centre (onto the lid) — without
+        // this guard the mirror flips it onto the sclera on one eye.
+        if ((lash[i].x + nx - eyeC.x) ** 2 + (lash[i].y + ny - eyeC.y) ** 2 < (lash[i].x - eyeC.x) ** 2 + (lash[i].y - eyeC.y) ** 2) { nx = -nx; ny = -ny; }
         const u = 1 - i / (n - 1);
-        const w = wMax * Math.max(0.12, Math.sin(clamp(u / 0.8, 0, 1) * Math.PI * 0.5));
+        const w = wMax * Math.max(0.1, Math.sin(clamp(u / 0.7, 0, 1) * Math.PI * 0.5));
         top.push({ x: lash[i].x + nx * w, y: lash[i].y + ny * w });
-        bot.push({ x: lash[i].x - nx * w * 0.2, y: lash[i].y - ny * w * 0.2 });
+        bot.push({ x: lash[i].x - nx * w * 0.18, y: lash[i].y - ny * w * 0.18 });
       }
-      const region = [...top, ...bot.slice().reverse()];
-      // wing
+      let region = [...top, ...bot.slice().reverse()];
+      // wing — a proper filled triangle off the outer corner (lash[0])
       if (style === "winged" || style === "graphic") {
-        const outer = P[outerI] || lash[0];
         const dir = { x: lash[0].x - lash[1].x, y: lash[0].y - lash[1].y };
         const dl = Math.hypot(dir.x, dir.y) || 1;
-        const wl = eyeW * (style === "graphic" ? 0.18 : 0.12);
-        region.unshift({ x: outer.x + (dir.x / dl) * wl, y: outer.y + (dir.y / dl) * wl - eyeW * 0.05 });
+        const wl = eyeW * (style === "graphic" ? 0.16 : 0.11);
+        const tip = { x: lash[0].x + (dir.x / dl) * wl, y: lash[0].y + (dir.y / dl) * wl - eyeW * 0.06 };
+        region = [tip, ...top, ...bot.slice().reverse(), lash[0]];
       }
-      const bb = bboxOf(region, 3);
+      const bb = bboxOf(region, 4);
       const L = layer("liner_" + lashIdx[0], bb.w, bb.h); const o = L.ctx;
       o.filter = "blur(0.7px)"; o.fillStyle = rgba(rgb, 1);
       const p = new Path2D();
       p.moveTo(region[0].x - bb.x, region[0].y - bb.y);
       for (let i = 1; i < region.length; i++) p.lineTo(region[i].x - bb.x, region[i].y - bb.y);
       p.closePath(); o.fill(p); o.filter = "none";
-      if (finish === "metallic") addSpeckle(o, bb, 0.25);
+      if (finish === "metallic") addSpeckle(o, bb, 0.22);
       ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = (style === "tightline" ? 0.7 : 0.9) * intensity;
+      ctx.globalAlpha = (style === "tightline" ? 0.6 : 0.8) * intensity;
       ctx.drawImage(L.canvas, bb.x, bb.y);
       reset(ctx);
     }
@@ -458,7 +486,7 @@ export function createMakeupRenderer() {
       const n = lash.length;
       const eyeC = centroid(lash);
       const top = [], bot = [];
-      const baseW = fw * (isUpper ? 0.012 : 0.007);
+      const baseW = fw * (isUpper ? 0.01 : 0.004);
       for (let i = 0; i < n; i++) {
         const prev = lash[Math.max(0, i - 1)], next = lash[Math.min(n - 1, i + 1)];
         const tx = next.x - prev.x, ty = next.y - prev.y; const len = Math.hypot(tx, ty) || 1;
@@ -486,18 +514,21 @@ export function createMakeupRenderer() {
           const tx = next.x - prev.x, ty = next.y - prev.y; const len = Math.hypot(tx, ty) || 1;
           let nx = -ty / len, ny = tx / len;
           if ((lash[i].y + ny) > lash[i].y) { nx = -nx; ny = -ny; } // upward
-          const outerBias = 0.5 + (i / (n - 1)) * 0.8;
-          const ll = fw * 0.02 * outerBias;
+          const u = 1 - i / (n - 1); // 1 at the outer corner (lash[0])
+          const ll = fw * 0.018 * (0.45 + u * 0.9); // longest at the outer fan
+          // outer tips fan up-and-OUT toward the temple
+          const outX = lash[0].x - lash[n - 1].x, outL = Math.hypot(outX, lash[0].y - lash[n - 1].y) || 1;
+          const dx = nx * (1 - u * 0.5) + (outX / outL) * u * 0.5;
           o.lineWidth = Math.max(0.6, fw * 0.003);
           o.beginPath();
           o.moveTo(lash[i].x - bb.x, lash[i].y - bb.y);
-          o.lineTo(lash[i].x + nx * ll - bb.x, lash[i].y + ny * ll - bb.y);
+          o.lineTo(lash[i].x + dx * ll - bb.x, lash[i].y + ny * ll - bb.y);
           o.stroke();
         }
       }
       if (finish === "glossy") { o.globalCompositeOperation = "screen"; o.globalAlpha = 0.4; softBlob(o, eyeC.x - bb.x, eyeC.y - bb.y - fw * 0.01, fw * 0.02, [255, 255, 255], 0.6); o.globalAlpha = 1; o.globalCompositeOperation = "source-over"; }
       ctx.globalCompositeOperation = "multiply";
-      ctx.globalAlpha = (isUpper ? 0.92 : 0.5) * intensity;
+      ctx.globalAlpha = (isUpper ? 0.8 : 0.25) * intensity;
       ctx.drawImage(L.canvas, bb.x, bb.y);
       reset(ctx);
     }
@@ -531,7 +562,8 @@ export function createMakeupRenderer() {
       const W = ctxW(ctx), H = ctxH(ctx);
       const L = layer("hlSpk", W, H); const o = L.ctx;
       for (const s of spots) softBlob(o, s.x, s.y, s.r, [255, 255, 255], 1);
-      o.globalCompositeOperation = "source-in"; o.drawImage(getSpeckle(), 0, 0, W, H);
+      o.globalCompositeOperation = "source-in";
+      for (let yy = 0; yy < H; yy += 128) for (let xx = 0; xx < W; xx += 128) o.drawImage(getSpeckle(), xx, yy);
       ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = (finish === "metallic" ? 0.22 : 0.14) * intensity;
       ctx.drawImage(L.canvas, 0, 0);
       reset(ctx);
@@ -615,7 +647,11 @@ export function createMakeupRenderer() {
     if (lo && li) { so.save(); so.translate((lo.x + li.x) / 2 - bb.x, (lo.y + li.y) / 2 - bb.y); so.scale(2.5, 0.5); softBlob(so, 0, 0, lipW * 0.18, [255, 255, 255], 0.95); so.restore(); }
     for (const a of anchors) softBlob(so, a.x - bb.x, a.y - bb.y, lipW * (finish === "sheer" ? 0.14 : 0.09), [255, 255, 255], finish === "sheer" ? 0.5 : 0.9);
     so.globalCompositeOperation = "destination-in"; so.fill(path, "evenodd");
-    if (finish === "shimmer") { so.globalCompositeOperation = "source-atop"; so.globalAlpha = 0.3; so.drawImage(getSpeckle(), 0, 0, bb.w, bb.h); so.globalAlpha = 1; }
+    if (finish === "shimmer") {
+      so.globalCompositeOperation = "source-atop"; so.globalAlpha = 0.3;
+      for (let yy = 0; yy < bb.h; yy += 128) for (let xx = 0; xx < bb.w; xx += 128) so.drawImage(getSpeckle(), xx, yy);
+      so.globalAlpha = 1;
+    }
     so.globalCompositeOperation = "source-over";
     ctx.globalCompositeOperation = "screen"; ctx.globalAlpha = clamp(0.9 * intensity, 0, 1); ctx.drawImage(S.canvas, bb.x, bb.y);
     reset(ctx);

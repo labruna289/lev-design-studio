@@ -253,18 +253,16 @@ export const LIVE_LOOKS: { id: string; title: string; products: Record<string, L
     products: {
       "shine-loud": { shadeHex: "#CE8E83", finish: "glossy", intensity: 0.72, enabled: true },
       "sweet-cheeks": { shadeHex: "#E8B49E", finish: "dewy", intensity: 0.45, enabled: true },
-      "ultimate-shadow": { shadeHex: "#C9A87A", finish: "shimmer", intensity: 0.45, enabled: true, style: "lid" },
-      "jumbo-glow": { shadeHex: "#FBF1E2", finish: "pearl", intensity: 0.35, enabled: true },
-      "micro-brow": { shadeHex: "#8A7156", finish: "satin", intensity: 0.4, enabled: true },
+      "ultimate-shadow": { shadeHex: "#C9A87A", finish: "satin", intensity: 0.45, enabled: true, style: "lid" },
     },
   },
   {
     id: "ego-glare", title: "Ego Glare",
     products: {
       "shine-loud": { shadeHex: "#6B2230", finish: "matte", intensity: 0.85, enabled: true },
-      "ultimate-shadow": { shadeHex: "#4A2A1A", finish: "satin", intensity: 0.6, enabled: true, style: "smoky" },
-      "epic-ink": { shadeHex: "#14100E", finish: "matte", intensity: 0.85, enabled: true, style: "winged" },
-      "epic-lash": { shadeHex: "#0A0A0A", finish: "matte", intensity: 0.8, enabled: true },
+      "ultimate-shadow": { shadeHex: "#4A2A1A", finish: "satin", intensity: 0.55, enabled: true, style: "smoky" },
+      "epic-ink": { shadeHex: "#14100E", finish: "matte", intensity: 0.8, enabled: true, style: "winged" },
+      "epic-lash": { shadeHex: "#0A0A0A", finish: "matte", intensity: 0.7, enabled: true },
     },
   },
   {
@@ -272,9 +270,7 @@ export const LIVE_LOOKS: { id: string; title: string; products: Record<string, L
     products: {
       "shine-loud": { shadeHex: "#D85A47", finish: "glossy", intensity: 0.78, enabled: true },
       "sweet-cheeks": { shadeHex: "#E0703F", finish: "dewy", intensity: 0.5, enabled: true },
-      "sun-stick": { shadeHex: "#B5702E", finish: "matte", intensity: 0.4, enabled: true },
-      "ultimate-shadow": { shadeHex: "#B5722F", finish: "shimmer", intensity: 0.5, enabled: true, style: "lid" },
-      "jumbo-glow": { shadeHex: "#EFCB86", finish: "shimmer", intensity: 0.35, enabled: true },
+      "ultimate-shadow": { shadeHex: "#B5722F", finish: "satin", intensity: 0.5, enabled: true, style: "lid" },
     },
   },
 ];
