@@ -1,92 +1,51 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Camera, CameraOff, Download, Sparkles } from "lucide-react";
-import {
-  getVideoLandmarker,
-  detectVideoFrame,
-  meshToFeatureMap,
-  contourPct,
-  contourToStage,
-  polygonToClipPath,
-  LIP_OUTER,
-  FACE_OVAL,
-} from "@/lib/facemesh-tier";
+import { CameraOff, Download } from "lucide-react";
+import { getVideoLandmarker, detectVideoFrame } from "@/lib/facemesh-tier";
 import { installMediapipeCdnShim } from "@/lib/mediapipe-cdn-shim";
-import {
-  coverMap,
-  validateFeatureMap,
-  deriveFromFeatureMap,
-  buildApplySequence,
-  regionFromFeatureMap,
-  computeFaceRegion,
-} from "@/lib/mirror-logic";
+import { createMakeupRenderer, hexToRgb } from "@/lib/makeup-canvas";
 import { LOOK_GRADES, SHADES, type LookGrade, type Shade } from "@/lib/eleve-shades";
 
 type TintType = "lip" | "blush" | "eye";
-type Tint = { id: string; type: TintType; x: number; y: number; size?: number; shade: string };
-type Polygon = Array<{ x: number; y: number }>;
-type Contours = { lipOuter: Polygon | null; faceOval: Polygon | null };
-type FeatureMap = Record<string, any> & { face_found: true; stage?: true };
-
-const STRENGTHS: Record<TintType, { color: number; multiply: number }> = {
-  lip: { color: 0.95, multiply: 0.5 },
-  blush: { color: 0.55, multiply: 0.18 },
-  eye: { color: 0.5, multiply: 0.22 },
-};
-
-function hexA(hex: string, a: number) {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${a.toFixed(3)})`;
-}
-
-function tintBg(t: Tint, intensity: number) {
-  const wMul: Record<TintType, number> = { lip: 13, blush: 24, eye: 16 };
-  const baseW = wMul[t.type] * (t.size ? t.size / 13 : 1);
-  const ratio: Record<TintType, number> = { lip: 0.48, blush: 0.85, eye: 0.42 };
-  const fall: Record<TintType, number> = { lip: 0.62, blush: 0.74, eye: 0.72 };
-  const w = baseW;
-  const h = baseW * ratio[t.type];
-  const stop = `${(fall[t.type] * 100).toFixed(0)}%`;
-  return (alpha: number) =>
-    `radial-gradient(ellipse ${w}% ${h}% at ${t.x}% ${t.y}%, ${hexA(t.shade, alpha)} 0%, ${hexA(t.shade, alpha * 0.6)} 40%, transparent ${stop})`;
-}
+type Finish = "glossy" | "matte";
 
 interface LiveMirrorProps {
   onBack?: () => void;
 }
 
-export default function LiveMirror({ onBack }: LiveMirrorProps) {
+export default function LiveMirror(_props: LiveMirrorProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stageRef = useRef<HTMLDivElement | null>(null);
   const landmarkerRef = useRef<any>(null);
+  const rendererRef = useRef<ReturnType<typeof createMakeupRenderer> | null>(null);
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [cameraReady, setCameraReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [faceFound, setFaceFound] = useState(false);
 
   const [lookIdx, setLookIdx] = useState(0);
   const look: LookGrade = LOOK_GRADES[lookIdx];
-  const [intensity, setIntensity] = useState(0.75);
+  const [intensity, setIntensity] = useState(0.85);
   const [tab, setTab] = useState<TintType>("lip");
   const [shades, setShades] = useState(look.defaults);
+  const [finish, setFinish] = useState<Finish>("glossy");
+  const [enabled, setEnabled] = useState({ lip: true, blush: true, eye: true, liner: false });
 
-  const [tints, setTints] = useState<Tint[]>([]);
-  const [contours, setContours] = useState<Contours | null>(null);
-  const [featureMap, setFeatureMap] = useState<FeatureMap | null>(null);
-
-  // Mirror the video horizontally so it feels like looking in a mirror
-  const videoStyle: React.CSSProperties = { transform: "scaleX(-1)" };
+  // Live values the rAF loop reads through refs (avoids stale closure state).
+  const optsRef = useRef({ shades, intensity, finish, enabled });
+  useEffect(() => {
+    optsRef.current = { shades, intensity, finish, enabled };
+  }, [shades, intensity, finish, enabled]);
 
   useEffect(() => { installMediapipeCdnShim(); }, []);
 
+  // Reset shades to the look's defaults when the look changes.
   useEffect(() => {
     setShades(LOOK_GRADES[lookIdx].defaults);
-    setTints((prev) => prev.map((t) => ({ ...t, shade: LOOK_GRADES[lookIdx].defaults[t.type] })));
   }, [lookIdx]);
 
   const startCamera = useCallback(async () => {
@@ -94,14 +53,13 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 854 } },
+        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
         audio: false,
       });
       streamRef.current = stream;
       const video = videoRef.current!;
       video.srcObject = stream;
       await video.play();
-      setCameraReady(true);
 
       const lmkr = await getVideoLandmarker();
       if (!lmkr) {
@@ -110,9 +68,11 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
         return;
       }
       landmarkerRef.current = lmkr;
+      rendererRef.current = createMakeupRenderer();
+      setCameraReady(true);
       setLoading(false);
     } catch (e: any) {
-      setError(e.message || "Camera access denied.");
+      setError(e?.message || "Camera access denied.");
       setLoading(false);
     }
   }, []);
@@ -130,157 +90,87 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
     return stopCamera;
   }, [startCamera, stopCamera]);
 
-  // The detection loop — runs every frame when camera is ready
+  // The render loop — draws video + makeup to the canvas every frame.
   useEffect(() => {
-    if (!cameraReady || !landmarkerRef.current) return;
+    if (!cameraReady || !landmarkerRef.current || !rendererRef.current) return;
     const video = videoRef.current!;
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
     const lmkr = landmarkerRef.current;
-    const aspect = video.videoWidth / video.videoHeight || 0.75;
+    const renderer = rendererRef.current;
     let lastTime = -1;
+    let lastFace = false;
+
+    function sizeCanvas() {
+      const stage = stageRef.current;
+      if (!stage) return;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const w = Math.round(stage.clientWidth * dpr);
+      const h = Math.round(stage.clientHeight * dpr);
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+    }
 
     function loop() {
       rafRef.current = requestAnimationFrame(loop);
       const now = performance.now();
-      // Throttle to ~20fps to avoid overloading
-      if (now - lastTime < 50) return;
+      if (now - lastTime < 33) return; // ~30fps
       lastTime = now;
-
       if (video.readyState < 2) return;
+      sizeCanvas();
+      const W = canvas.width, H = canvas.height;
 
       const lms = detectVideoFrame(lmkr, video, now);
-      if (!lms || lms.length < 478) return;
+      const o = optsRef.current;
 
-      const raw = meshToFeatureMap(lms);
-      if (!raw) return;
+      if (!lms || lms.length < 478) {
+        // No face — show the raw mirrored video so the user still sees themself.
+        const vw = video.videoWidth, vh = video.videoHeight;
+        if (vw && vh) {
+          const s = Math.max(W / vw, H / vh);
+          const ox = (W - vw * s) / 2, oy = (H - vh * s) / 2;
+          ctx.setTransform(-s, 0, 0, s, ox + vw * s, oy);
+          ctx.drawImage(video, 0, 0);
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+        }
+        if (lastFace) { lastFace = false; setFaceFound(false); }
+        return;
+      }
+      if (!lastFace) { lastFace = true; setFaceFound(true); }
 
-      const stageMap: any = { face_found: true, stage: true };
-      Object.keys(raw).forEach((k: string) => {
-        if ((raw as any)[k] && Number.isFinite((raw as any)[k].x))
-          stageMap[k] = coverMap((raw as any)[k].x, (raw as any)[k].y, aspect);
-      });
-      if (!validateFeatureMap(stageMap)) return;
-
-      const nextContours: Contours = {
-        lipOuter: contourToStage(contourPct(lms, LIP_OUTER), coverMap, aspect),
-        faceOval: contourToStage(contourPct(lms, FACE_OVAL), coverMap, aspect),
-      };
-
-      setFeatureMap(stageMap);
-      setContours(nextContours);
-
-      const lm = deriveFromFeatureMap(stageMap);
-      if (!lm) return;
-      (lm as any).stage = true;
-
-      const seq = buildApplySequence(lm, aspect) || [];
-      // We read current shades via a ref-trick: we set tints directly from seq
-      setTints((prevTints) => {
-        // Preserve current shades from previous tints
-        const currentShades = prevTints.length > 0
-          ? { lip: prevTints.find(t => t.type === "lip")?.shade, blush: prevTints.find(t => t.type === "blush")?.shade, eye: prevTints.find(t => t.type === "eye")?.shade }
-          : null;
-        return seq.map((s: any, i: number) => ({
-          id: `live-${i}-${s.t.type}`,
-          type: s.t.type as TintType,
-          x: s.t.x,
-          y: s.t.y,
-          size: s.t.size,
-          shade: (currentShades as any)?.[s.t.type] || look.defaults[s.t.type as TintType],
-        }));
+      renderer.render(ctx, lms, video, W, H, {
+        shades: {
+          lip: hexToRgb(o.shades.lip),
+          blush: hexToRgb(o.shades.blush),
+          eye: hexToRgb(o.shades.eye),
+        },
+        intensity: o.intensity,
+        enabled: o.enabled,
+        finish: o.finish,
+        blushFinish: "dewy",
+        smoothing: 0.5,
       });
     }
 
     rafRef.current = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [cameraReady, look.defaults]);
-
-  const region = useMemo(() => {
-    if (featureMap) {
-      const r = regionFromFeatureMap({ ...featureMap }, 0.75);
-      if (r) return r;
-    }
-    return computeFaceRegion(null, 0.75);
-  }, [featureMap]);
-
-  const svgFaceMaskUrl = useMemo(() => {
-    const poly = contours?.faceOval;
-    if (!poly || poly.length < 3) return null;
-    const d = poly.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join(" ") + " Z";
-    const svg =
-      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100' preserveAspectRatio='none'>` +
-      `<defs><filter id='b' x='-20%' y='-20%' width='140%' height='140%'>` +
-      `<feGaussianBlur stdDeviation='6'/></filter></defs>` +
-      `<path d='${d}' fill='white' filter='url(#b)'/></svg>`;
-    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
-  }, [contours]);
-
-  const gradeMaskStyle = useMemo<React.CSSProperties>(() => {
-    if (svgFaceMaskUrl) {
-      return {
-        WebkitMaskImage: svgFaceMaskUrl, maskImage: svgFaceMaskUrl,
-        WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat",
-        WebkitMaskSize: "100% 100%", maskSize: "100% 100%",
-      };
-    }
-    const { cx, cy, rx, ry } = region;
-    const m = `radial-gradient(ellipse ${rx}% ${ry}% at ${cx}% ${cy}%, #000 55%, rgba(0,0,0,0.7) 75%, transparent 100%)`;
-    return { WebkitMaskImage: m, maskImage: m, WebkitMaskRepeat: "no-repeat", maskRepeat: "no-repeat" };
-  }, [svgFaceMaskUrl, region]);
-
-  const lipClipPath = useMemo(() => {
-    return contours?.lipOuter ? polygonToClipPath(contours.lipOuter) : null;
-  }, [contours]);
+  }, [cameraReady]);
 
   function pickShade(s: Shade) {
     setShades((sh) => ({ ...sh, [tab]: s.hex }));
-    setTints((prev) => prev.map((t) => (t.type === tab ? { ...t, shade: s.hex } : t)));
   }
-
   function resetTab() {
     setShades((sh) => ({ ...sh, [tab]: look.defaults[tab] }));
-    setTints((prev) => prev.map((t) => (t.type === tab ? { ...t, shade: look.defaults[tab] } : t)));
+  }
+  function toggleProduct(key: keyof typeof enabled) {
+    setEnabled((e) => ({ ...e, [key]: !e[key] }));
   }
 
-  async function captureScreenshot() {
-    const video = videoRef.current;
-    if (!video) return;
-    const W = 1080, H = 1440;
-    const canvas = document.createElement("canvas");
-    canvas.width = W; canvas.height = H;
-    const ctx = canvas.getContext("2d")!;
-    // Mirror + cover-crop the video
-    const vw = video.videoWidth, vh = video.videoHeight;
-    const ar = vw / vh, target = W / H;
-    let sx = 0, sy = 0, sw = vw, sh = vh;
-    if (ar > target) { sw = vh * target; sx = (vw - sw) / 2; }
-    else { sh = vw / target; sy = (vh - sh) / 2; }
-    ctx.save();
-    ctx.translate(W, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, W, H);
-    ctx.restore();
-    // Tints
-    for (const t of tints) {
-      const w = (t.type === "lip" ? 13 : t.type === "blush" ? 24 : 16) * (W / 100);
-      const h = w * (t.type === "lip" ? 0.48 : t.type === "blush" ? 0.85 : 0.42);
-      const tx = W * t.x / 100, ty = H * t.y / 100;
-      const colorA = STRENGTHS[t.type].color * intensity;
-      const multA = STRENGTHS[t.type].multiply * intensity;
-      const drawEllipse = (alpha: number, op: GlobalCompositeOperation) => {
-        ctx.save();
-        ctx.globalCompositeOperation = op;
-        const g = ctx.createRadialGradient(tx, ty, 0, tx, ty, Math.max(w, h));
-        g.addColorStop(0, hexA(t.shade, alpha));
-        g.addColorStop(1, hexA(t.shade, 0));
-        ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.ellipse(tx, ty, w, h, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      };
-      drawEllipse(colorA, "color");
-      drawEllipse(multA, "multiply");
-    }
+  function captureScreenshot() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     const url = canvas.toDataURL("image/jpeg", 0.92);
     const a = document.createElement("a");
     a.href = url;
@@ -297,47 +187,30 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
         className="relative w-full overflow-hidden card-atelier select-none"
         style={{ aspectRatio: "3 / 4", padding: 0, touchAction: "none" }}
       >
-        {/* Video feed */}
+        {/* Source video — kept behind the canvas (mirrored fallback before first paint). */}
         <video
           ref={videoRef}
           playsInline
           muted
           className="absolute inset-0 h-full w-full object-cover"
-          style={videoStyle}
+          style={{ transform: "scaleX(-1)" }}
+        />
+        {/* Canvas draws the mirrored video + makeup; fully covers the video. */}
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 h-full w-full"
+          style={{ pointerEvents: "none" }}
         />
 
-        {/* Effects overlay — only show when we have tints */}
-        {tints.length > 0 && (
-          <div className="absolute inset-0" style={{ isolation: "isolate", transform: "scaleX(-1)" }}>
-            {/* Tints */}
-            {tints.map((t) => {
-              const useLipClip = t.type === "lip" && lipClipPath;
-              const colorA = STRENGTHS[t.type].color * intensity;
-              const multA = STRENGTHS[t.type].multiply * intensity;
-              if (useLipClip) {
-                return (
-                  <div key={t.id + "-lip"} className="absolute inset-0 pointer-events-none"
-                    style={{ clipPath: lipClipPath!, WebkitClipPath: lipClipPath! as any, filter: "blur(2px)" }}>
-                    <div className="absolute inset-0"
-                      style={{ background: hexA(t.shade, colorA), mixBlendMode: "color" }} />
-                    <div className="absolute inset-0"
-                      style={{ background: hexA(t.shade, multA), mixBlendMode: "multiply" }} />
-                  </div>
-                );
-              }
-              return (
-                <div key={t.id + "-wrap"}>
-                  <div className="absolute inset-0 pointer-events-none"
-                    style={{ mixBlendMode: "color", backgroundImage: tintBg(t, intensity)(colorA) }} />
-                  <div className="absolute inset-0 pointer-events-none"
-                    style={{ mixBlendMode: "multiply", backgroundImage: tintBg(t, intensity)(multA) }} />
-                </div>
-              );
-            })}
+        {/* Hint when no face is detected */}
+        {cameraReady && !faceFound && !loading && !error && (
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 pill text-[11px] tracking-[0.18em] uppercase"
+            style={{ padding: "8px 16px", background: "rgba(17,17,17,0.6)", color: "#FFFDF9" }}>
+            Center your face in the frame
           </div>
         )}
 
-        {/* Loading / error overlay */}
+        {/* Loading / error overlays */}
         {loading && (
           <div className="absolute inset-0 grid place-items-center"
             style={{ background: "rgba(248,243,236,0.85)", backdropFilter: "blur(10px)" }}>
@@ -348,13 +221,11 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
           </div>
         )}
         {error && (
-          <div className="absolute inset-0 grid place-items-center"
-            style={{ background: "rgba(248,243,236,0.9)" }}>
+          <div className="absolute inset-0 grid place-items-center" style={{ background: "rgba(248,243,236,0.9)" }}>
             <div className="text-center px-6">
               <CameraOff size={32} className="mx-auto text-espresso mb-3" strokeWidth={1.25} />
               <div className="serif-display italic text-espresso text-[16px]">{error}</div>
-              <button onClick={startCamera}
-                className="mt-4 pill bg-champagne text-espresso press text-[13px]">
+              <button onClick={startCamera} className="mt-4 pill bg-champagne text-espresso press text-[13px]">
                 Try again
               </button>
             </div>
@@ -432,10 +303,43 @@ export default function LiveMirror({ onBack }: LiveMirrorProps) {
           </div>
           <IntensitySlider value={intensity} onChange={setIntensity} />
         </div>
+
+        {/* Lip finish */}
+        <div className="mt-4 flex items-center gap-2">
+          <span className="text-[11px] tracking-[0.18em] uppercase text-muted-foreground mr-1">Lip finish</span>
+          {(["glossy", "matte"] as Finish[]).map((f) => (
+            <button key={f} onClick={() => setFinish(f)}
+              className="press text-[11px] tracking-[0.14em] uppercase"
+              style={{
+                padding: "6px 12px", borderRadius: 999,
+                background: finish === f ? "var(--ink)" : "transparent",
+                color: finish === f ? "var(--surface)" : "var(--muted-ink)",
+                border: `1px solid ${finish === f ? "var(--ink)" : "var(--border)"}`,
+              }}>
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Product toggles */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          {([["lip", "Lips"], ["blush", "Blush"], ["eye", "Eyes"], ["liner", "Liner"]] as [keyof typeof enabled, string][]).map(([key, label]) => (
+            <button key={key} onClick={() => toggleProduct(key)}
+              className="press inline-flex items-center text-[11px] tracking-[0.16em] uppercase"
+              style={{
+                padding: "8px 12px", borderRadius: 999,
+                background: enabled[key] ? "var(--champagne)" : "var(--background)",
+                border: `1px solid ${enabled[key] ? "var(--champagne)" : "var(--border)"}`,
+                color: enabled[key] ? "var(--espresso)" : "var(--muted-ink)",
+              }}>
+              {label} {enabled[key] ? "on" : "off"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Capture */}
-      <div className="mt-4 grid grid-cols-1 gap-2">
+      <div className="mt-4">
         <button onClick={captureScreenshot}
           className="pill bg-champagne text-espresso press flex items-center justify-center gap-2 text-[13px] w-full">
           <Download size={14} strokeWidth={1.25} /> Capture this look
