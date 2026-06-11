@@ -348,22 +348,23 @@ export function createMakeupRenderer() {
       }).reverse());
       const bb = bboxOf(all, fw * 0.08);
       const L = layer("eye_" + lashIdx[0], bb.w, bb.h); const o = L.ctx;
-      const blur = clamp(fw * 0.04, 1.5, 6);
+      const blur = clamp(fw * 0.032, 1.5, 5);
+      const lowerArc = lowerIdx.map(i => P[i]).filter(Boolean);
 
       // LID WASH
       if (zones.includes("lid")) {
-        const upper = lash.map((p, i) => { const t = i / (n - 1), f = 0.62 - 0.28 * t; return { x: p.x + lift.x * f, y: p.y + lift.y * f }; });
+        const upper = lash.map((p, i) => { const t = i / (n - 1), f = 0.55 - 0.24 * t; return { x: p.x + lift.x * f, y: p.y + lift.y * f }; });
         const region = lash.concat(upper.slice().reverse());
         o.filter = `blur(${blur}px)`;
         const g = o.createLinearGradient(lashC.x - bb.x, lashC.y - bb.y, creaseC.x - bb.x, creaseC.y - bb.y);
-        g.addColorStop(0, rgba(rgb, 0.6)); g.addColorStop(0.55, rgba(rgb, 0.22)); g.addColorStop(1, rgba(rgb, 0));
+        g.addColorStop(0, rgba(rgb, 0.5)); g.addColorStop(0.55, rgba(rgb, 0.2)); g.addColorStop(1, rgba(rgb, 0));
         o.fillStyle = g; const p = new Path2D(); traceSmooth(p, region, bb.x, bb.y); o.fill(p);
         o.filter = "none";
       }
       // CREASE deepening
       if (zones.includes("crease") && crease.length) {
         o.filter = `blur(${blur}px)`;
-        o.strokeStyle = rgba(rgb.map(v => v * 0.8), 0.5); o.lineWidth = fw * 0.04; o.lineCap = "round";
+        o.strokeStyle = rgba(rgb.map(v => v * 0.8), 0.45); o.lineWidth = fw * 0.035; o.lineCap = "round";
         const p = new Path2D(); tracePolyline(p, crease, bb.x, bb.y); o.stroke(p);
         o.filter = "none";
       }
@@ -371,23 +372,31 @@ export function createMakeupRenderer() {
       if (zones.includes("outerV")) {
         const outer = P[outerI];
         o.filter = `blur(${blur}px)`;
-        softBlob(o, outer.x - bb.x, outer.y - bb.y, fw * 0.06, rgb.map(v => v * 0.6), 0.55);
+        softBlob(o, outer.x - bb.x, outer.y - bb.y, fw * 0.05, rgb.map(v => v * 0.6), 0.45);
         o.filter = "none";
       }
-      // LOWER smoke
-      if (zones.includes("lower")) {
-        const lower = lowerIdx.map(i => P[i]).filter(Boolean);
-        if (lower.length) {
-          o.filter = `blur(${blur}px)`; o.strokeStyle = rgba(rgb, 0.3); o.lineWidth = fw * 0.018; o.lineCap = "round";
-          const p = new Path2D(); tracePolyline(p, lower, bb.x, bb.y); o.stroke(p); o.filter = "none";
-        }
+      // LOWER smoke (under the lower lash only)
+      if (zones.includes("lower") && lowerArc.length) {
+        o.filter = `blur(${blur}px)`; o.strokeStyle = rgba(rgb, 0.28); o.lineWidth = fw * 0.016; o.lineCap = "round";
+        const p = new Path2D(); tracePolyline(p, lowerArc, bb.x, bb.y); o.stroke(p); o.filter = "none";
       }
 
-      if (finish === "shimmer" || finish === "metallic") addSpeckle(o, bb, finish === "metallic" ? 0.22 : 0.14);
+      // KEEP SHADOW ON THE LID — punch out the open eye so it never darkens
+      // the eyeball (this is what prevents the "black socket" look).
+      if (lowerArc.length) {
+        const aperture = lash.concat(lowerArc.slice().reverse());
+        o.globalCompositeOperation = "destination-out";
+        o.filter = `blur(${Math.max(1, blur * 0.5)}px)`;
+        o.fillStyle = "#fff";
+        const ap = new Path2D(); traceSmooth(ap, aperture, bb.x, bb.y); o.fill(ap);
+        o.filter = "none"; o.globalCompositeOperation = "source-over";
+      }
+
+      if (finish === "shimmer" || finish === "metallic") addSpeckle(o, bb, finish === "metallic" ? 0.2 : 0.12);
 
       // composite union: multiply + soft-light
-      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = 0.5 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
-      ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.4 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = 0.42 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
+      ctx.globalCompositeOperation = "soft-light"; ctx.globalAlpha = 0.32 * intensity; ctx.drawImage(L.canvas, bb.x, bb.y);
       reset(ctx);
 
       // INNER-CORNER highlight
@@ -406,9 +415,9 @@ export function createMakeupRenderer() {
       const lash = lashIdx.map(i => P[i]); if (lash.some(p => !p)) continue;
       const n = lash.length;
       const eyeW = dist(lash[0], lash[n - 1]);
-      let wMax = fw * 0.05;
-      if (style === "thin" || style === "tightline") wMax *= 0.55;
-      if (style === "graphic") wMax *= 1.4;
+      let wMax = fw * 0.032;
+      if (style === "thin" || style === "tightline") wMax *= 0.6;
+      if (style === "graphic") wMax *= 1.5;
       const top = [], bot = [];
       for (let i = 0; i < n; i++) {
         const prev = lash[Math.max(0, i - 1)], next = lash[Math.min(n - 1, i + 1)];
