@@ -52,19 +52,7 @@ export const savedStore = {
   },
 };
 
-export function useSavedIds(): string[] {
-  return useSyncExternalStore(
-    savedStore.subscribe,
-    () => {
-      ensureLoaded();
-      // identity-stable snapshot via JSON length+content; cheap enough
-      return JSON.stringify([...saved]);
-    },
-    () => "[]",
-  ) as unknown as string[] extends never ? never : never as any || savedStore.list();
-}
-
-// Cleaner hook returning array
+// Hook returning the current list of saved IDs.
 export function useSaved() {
   const snap = useSyncExternalStore(
     savedStore.subscribe,
